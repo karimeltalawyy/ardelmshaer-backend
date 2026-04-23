@@ -1,0 +1,3 @@
+-- Baseline migration: marks the existing database schema as the starting point.
+-- The database was created and populated before Prisma Migrate was introduced.
+-- This migration intentionally contains no SQL.

@@ -1,0 +1,547 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+model User {
+  id                  String            @id @default(uuid()) @db.Uuid
+  fullName            String            @map("full_name")
+  email               String            @unique
+  password            String
+  phone               String?           @unique
+  nationality         String            @default("")
+  idNumber            String            @default("") @map("id_number")
+  role                UserRole          @default(rider)
+  status              UserStatus        @default(active)
+  createdAt           DateTime          @default(now()) @map("created_at")
+  profileImage        String?           @map("profile_image")
+  auditLogs           AuditLog[]
+  bookings            Booking[]
+  approvedDrivers     DriverProfile[]   @relation("ApprovedByAdmin")
+  driverProfile       DriverProfile?    @relation("DriverUser")
+  notificationLogs    NotificationLog[]
+  platformConfigEdits PlatformConfig[]
+  createdTrips        Trip[]
+  sessions            UserSession[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  refreshToken String   @map("refresh_token")
+  deviceInfo   String?  @map("device_info")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+model OtpVerification {
+  id        String     @id @default(uuid()) @db.Uuid
+  phone     String
+  code      String
+  purpose   OtpPurpose
+  isUsed    Boolean    @default(false) @map("is_used")
+  expiresAt DateTime   @map("expires_at")
+
+  @@map("otp_verifications")
+}
+
+model DriverProfile {
+  id              String               @id @default(uuid()) @db.Uuid
+  userId          String               @unique @map("user_id") @db.Uuid
+  licenseNumber   String               @map("license_number")
+  approvalStatus  DriverApprovalStatus @default(pending) @map("approval_status")
+  rejectionReason String?              @map("rejection_reason")
+  approvedBy      String?              @map("approved_by") @db.Uuid
+  approvedAt      DateTime?            @map("approved_at")
+  cars            Car[]
+  documents       DriverDocument[]
+  approvedByUser  User?                @relation("ApprovedByAdmin", fields: [approvedBy], references: [id])
+  user            User                 @relation("DriverUser", fields: [userId], references: [id], onDelete: Cascade)
+  trips           Trip[]
+
+  @@map("driver_profiles")
+}
+
+model DriverDocument {
+  id         String         @id @default(uuid()) @db.Uuid
+  driverId   String         @map("driver_id") @db.Uuid
+  docType    DocumentType   @map("doc_type")
+  fileUrl    String         @map("file_url")
+  status     DocumentStatus @default(pending)
+  uploadedAt DateTime       @default(now()) @map("uploaded_at")
+  driver     DriverProfile  @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@map("driver_documents")
+}
+
+model CarTypeConfig {
+  id              String         @id @default(uuid()) @db.Uuid
+  carType         CarType        @unique @map("car_type")
+  bookingMode     BookingMode    @map("booking_mode")
+  defaultCapacity Int            @map("default_capacity")
+  labelAr         String         @map("label_ar")
+  labelEn         String         @map("label_en")
+  isActive        Boolean        @default(true) @map("is_active")
+  routePricings   RoutePricing[]
+
+  @@map("car_type_configs")
+}
+
+model Car {
+  id             String        @id @default(uuid()) @db.Uuid
+  driverId       String        @map("driver_id") @db.Uuid
+  carType        CarType       @map("car_type")
+  plateNumber    String        @unique @map("plate_number")
+  brand          String
+  model          String
+  year           Int
+  totalSeats     Int           @map("total_seats")
+  seatLayoutJson Json?         @map("seat_layout_json")
+  status         CarStatus     @default(active)
+  seats          CarSeat[]
+  driver         DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  trips          Trip[]
+
+  @@map("cars")
+}
+
+model CarSeat {
+  id             String        @id @default(uuid()) @db.Uuid
+  carId          String        @map("car_id") @db.Uuid
+  seatCode       String        @map("seat_code")
+  position       SeatPosition
+  isExtraLegroom Boolean       @default(false) @map("is_extra_legroom")
+  bookingSeats   BookingSeat[]
+  car            Car           @relation(fields: [carId], references: [id], onDelete: Cascade)
+
+  @@unique([carId, seatCode])
+  @@map("car_seats")
+}
+
+model Destination {
+  id                  String          @id @default(uuid()) @db.Uuid
+  nameAr              String          @map("name_ar")
+  nameEn              String          @map("name_en")
+  type                DestinationType
+  region              String
+  sortOrder           Int             @default(0) @map("sort_order")
+  isActive            Boolean         @default(true) @map("is_active")
+  routesAsDestination Route[]         @relation("RouteDestination")
+  routesAsOrigin      Route[]         @relation("RouteOrigin")
+
+  @@map("destinations")
+}
+
+model Route {
+  id                   String         @id @default(uuid()) @db.Uuid
+  originId             String         @map("origin_id") @db.Uuid
+  destinationId        String         @map("destination_id") @db.Uuid
+  estimatedDurationMin Int            @map("estimated_duration_min")
+  isActive             Boolean        @default(true) @map("is_active")
+  pricings             RoutePricing[]
+  destination          Destination    @relation("RouteDestination", fields: [destinationId], references: [id])
+  origin               Destination    @relation("RouteOrigin", fields: [originId], references: [id])
+  trips                Trip[]
+
+  @@unique([originId, destinationId])
+  @@map("routes")
+}
+
+model RoutePricing {
+  id              String                @id @default(uuid()) @db.Uuid
+  routeId         String                @map("route_id") @db.Uuid
+  carType         CarType               @map("car_type")
+  basePrice       Decimal               @map("base_price") @db.Decimal(10, 2)
+  isActive        Boolean               @default(true) @map("is_active")
+  updatedAt       DateTime              @default(now()) @updatedAt @map("updated_at")
+  carTypeConfig   CarTypeConfig         @relation(fields: [carType], references: [carType])
+  route           Route                 @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  seasonOverrides SeasonRouteOverride[]
+
+  @@unique([routeId, carType])
+  @@map("route_pricings")
+}
+
+model Season {
+  id              String                @id @default(uuid()) @db.Uuid
+  nameAr          String                @map("name_ar")
+  nameEn          String                @map("name_en")
+  type            SeasonType
+  startDate       DateTime              @map("start_date") @db.Date
+  endDate         DateTime              @map("end_date") @db.Date
+  priceMultiplier Float                 @map("price_multiplier")
+  isActive        Boolean               @default(true) @map("is_active")
+  routeOverrides  SeasonRouteOverride[]
+  trips           Trip[]
+
+  @@map("seasons")
+}
+
+model SeasonRouteOverride {
+  id             String       @id @default(uuid()) @db.Uuid
+  seasonId       String       @map("season_id") @db.Uuid
+  routePricingId String       @map("route_pricing_id") @db.Uuid
+  overridePrice  Decimal      @map("override_price") @db.Decimal(10, 2)
+  routePricing   RoutePricing @relation(fields: [routePricingId], references: [id], onDelete: Cascade)
+  season         Season       @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, routePricingId])
+  @@map("season_route_overrides")
+}
+
+model PlatformConfig {
+  id            String   @id @default(uuid()) @db.Uuid
+  key           String   @unique
+  value         String
+  descriptionAr String   @map("description_ar")
+  descriptionEn String   @map("description_en")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+  updatedBy     String   @map("updated_by") @db.Uuid
+  updatedByUser User     @relation(fields: [updatedBy], references: [id])
+
+  @@map("platform_configs")
+}
+
+model CompanyBranch {
+  id              String    @id @default(uuid()) @db.Uuid
+  nameAr          String    @map("name_ar")
+  nameEn          String    @map("name_en")
+  addressAr       String    @map("address_ar")
+  addressEn       String    @map("address_en")
+  isActive        Boolean   @default(true) @map("is_active")
+  sortOrder       Int       @default(0) @map("sort_order")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  pickupSlotsJson Json?     @map("pickup_slots_json")
+  bookings        Booking[]
+
+  @@map("company_branches")
+}
+
+model CancellationPolicy {
+  id               String  @id @default(uuid()) @db.Uuid
+  hoursBeforeTrip  Int     @map("hours_before_trip")
+  refundPercentage Float   @map("refund_percentage")
+  descriptionAr    String  @map("description_ar")
+  descriptionEn    String  @map("description_en")
+  isActive         Boolean @default(true) @map("is_active")
+  trips            Trip[]
+
+  @@map("cancellation_policies")
+}
+
+model Trip {
+  id                      String              @id @default(uuid()) @db.Uuid
+  driverId                String              @map("driver_id") @db.Uuid
+  carId                   String              @map("car_id") @db.Uuid
+  routeId                 String              @map("route_id") @db.Uuid
+  seasonId                String?             @map("season_id") @db.Uuid
+  createdBy               String              @map("created_by") @db.Uuid
+  departureAt             DateTime            @map("departure_at")
+  bookingMode             BookingMode         @map("booking_mode")
+  pricePerSeat            Decimal?            @map("price_per_seat") @db.Decimal(10, 2)
+  priceWholeCar           Decimal?            @map("price_whole_car") @db.Decimal(10, 2)
+  totalSeats              Int?                @map("total_seats")
+  availableSeats          Int?                @map("available_seats")
+  status                  TripStatus          @default(scheduled)
+  createdAt               DateTime            @default(now()) @map("created_at")
+  allowCustomPickupTime   Boolean             @default(false) @map("allow_custom_pickup_time")
+  pickupAddress           String?             @map("pickup_address")
+  allowRiderCancellation  Boolean             @default(true) @map("allow_rider_cancellation")
+  cancellationCutoffHours Int?                @map("cancellation_cutoff_hours")
+  cancellationPolicyId    String?             @map("cancellation_policy_id") @db.Uuid
+  bookings                Booking[]
+  cancellationPolicy      CancellationPolicy? @relation(fields: [cancellationPolicyId], references: [id])
+  car                     Car                 @relation(fields: [carId], references: [id])
+  creator                 User                @relation(fields: [createdBy], references: [id])
+  driver                  DriverProfile       @relation(fields: [driverId], references: [id])
+  route                   Route               @relation(fields: [routeId], references: [id])
+  season                  Season?             @relation(fields: [seasonId], references: [id])
+
+  @@map("trips")
+}
+
+model Booking {
+  id                 String            @id @default(uuid()) @db.Uuid
+  riderId            String?           @map("rider_id") @db.Uuid
+  riderName          String?           @map("rider_name")
+  riderPhone         String?           @map("rider_phone")
+  tripId             String            @map("trip_id") @db.Uuid
+  bookingMode        BookingMode       @map("booking_mode")
+  seatCount          Int?              @map("seat_count")
+  basePrice          Decimal           @map("base_price") @db.Decimal(10, 2)
+  seasonMultiplier   Decimal           @default(1.0) @map("season_multiplier") @db.Decimal(5, 4)
+  platformFee        Decimal           @map("platform_fee") @db.Decimal(10, 2)
+  driverPayout       Decimal           @map("driver_payout") @db.Decimal(10, 2)
+  totalPrice         Decimal           @map("total_price") @db.Decimal(10, 2)
+  paymentMethod      PaymentMethod     @map("payment_method")
+  paymentStatus      PaymentStatus     @default(pending) @map("payment_status")
+  status             BookingStatus     @default(pending)
+  cancellationReason String?           @map("cancellation_reason")
+  cancelledAt        DateTime?         @map("cancelled_at")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  pickupAddress      String?           @map("pickup_address")
+  pickupTime         DateTime?         @map("pickup_time")
+  pickupBranchId     String?           @map("pickup_branch_id") @db.Uuid
+  pickupMode         PickupMode        @default(branch) @map("pickup_mode")
+  bookingSerial      Int               @unique @default(autoincrement()) @map("booking_serial")
+  contactPhone       String            @default("") @map("contact_phone")
+  bookingSeats       BookingSeat[]
+  pickupBranch       CompanyBranch?    @relation(fields: [pickupBranchId], references: [id])
+  rider              User?             @relation(fields: [riderId], references: [id])
+  trip               Trip              @relation(fields: [tripId], references: [id])
+  documents          Document[]
+  notifications      NotificationLog[]
+  passengers         Passenger[]
+
+  @@map("bookings")
+}
+
+model BookingSeat {
+  id          String            @id @default(uuid()) @db.Uuid
+  bookingId   String            @map("booking_id") @db.Uuid
+  carSeatId   String            @map("car_seat_id") @db.Uuid
+  passengerId String            @map("passenger_id") @db.Uuid
+  status      BookingSeatStatus @default(reserved)
+  booking     Booking           @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  carSeat     CarSeat           @relation(fields: [carSeatId], references: [id])
+  passenger   Passenger         @relation(fields: [passengerId], references: [id])
+
+  @@map("booking_seats")
+}
+
+model Passenger {
+  id           String        @id @default(uuid()) @db.Uuid
+  bookingId    String        @map("booking_id") @db.Uuid
+  fullName     String        @map("full_name")
+  nationality  String
+  idNumber     String        @map("id_number")
+  phone        String        @default("")
+  bookingSeats BookingSeat[]
+  booking      Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("passengers")
+}
+
+model Document {
+  id        String          @id @default(uuid()) @db.Uuid
+  bookingId String          @map("booking_id") @db.Uuid
+  type      PdfDocumentType
+  fileUrl   String          @map("file_url")
+  issuedAt  DateTime        @default(now()) @map("issued_at")
+  booking   Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("documents")
+}
+
+model NotificationTemplate {
+  id       String              @id @default(uuid()) @db.Uuid
+  type     NotificationType
+  channel  NotificationChannel
+  titleAr  String              @map("title_ar")
+  titleEn  String              @map("title_en")
+  bodyAr   String              @map("body_ar")
+  bodyEn   String              @map("body_en")
+  isActive Boolean             @default(true) @map("is_active")
+  logs     NotificationLog[]
+
+  @@unique([type, channel])
+  @@map("notification_templates")
+}
+
+model NotificationLog {
+  id         String               @id @default(uuid()) @db.Uuid
+  userId     String               @map("user_id") @db.Uuid
+  bookingId  String?              @map("booking_id") @db.Uuid
+  templateId String               @map("template_id") @db.Uuid
+  channel    NotificationChannel
+  message    String
+  status     NotificationStatus
+  sentAt     DateTime             @default(now()) @map("sent_at")
+  booking    Booking?             @relation(fields: [bookingId], references: [id])
+  template   NotificationTemplate @relation(fields: [templateId], references: [id])
+  user       User                 @relation(fields: [userId], references: [id])
+
+  @@map("notification_logs")
+}
+
+model FinancialReport {
+  id            String       @id @default(uuid()) @db.Uuid
+  period        ReportPeriod
+  reportDate    DateTime     @map("report_date") @db.Date
+  totalBookings Int          @map("total_bookings")
+  grossRevenue  Decimal      @map("gross_revenue") @db.Decimal(12, 2)
+  platformFees  Decimal      @map("platform_fees") @db.Decimal(12, 2)
+  driverPayouts Decimal      @map("driver_payouts") @db.Decimal(12, 2)
+  refunds       Decimal      @db.Decimal(12, 2)
+  netRevenue    Decimal      @map("net_revenue") @db.Decimal(12, 2)
+  generatedAt   DateTime     @default(now()) @map("generated_at")
+
+  @@unique([period, reportDate])
+  @@map("financial_reports")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  adminId    String   @map("admin_id") @db.Uuid
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id") @db.Uuid
+  action     String
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
+  createdAt  DateTime @default(now()) @map("created_at")
+  admin      User     @relation(fields: [adminId], references: [id])
+
+  @@map("audit_logs")
+}
+
+enum UserRole {
+  rider
+  driver
+  admin
+}
+
+enum UserStatus {
+  active
+  suspended
+}
+
+enum OtpPurpose {
+  register
+  login
+  reset
+}
+
+enum DriverApprovalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum DocumentType {
+  national_id
+  license
+  car_registration
+  car_photo
+}
+
+enum DocumentStatus {
+  pending
+  approved
+  rejected
+}
+
+enum CarType {
+  sedan
+  family
+  vip
+  limousine
+  minibus
+  bus
+}
+
+enum BookingMode {
+  whole_car
+  per_seat
+}
+
+enum CarStatus {
+  active
+  inactive
+}
+
+enum SeatPosition {
+  front
+  middle
+  back
+}
+
+enum DestinationType {
+  city
+  airport
+  hotel
+  landmark
+}
+
+enum SeasonType {
+  hajj
+  umrah
+  national_day
+  custom
+}
+
+enum TripStatus {
+  scheduled
+  in_progress
+  completed
+  cancelled
+}
+
+enum PaymentMethod {
+  cash
+  card
+  mada
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  refunded
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  cancelled
+  no_show
+}
+
+enum BookingSeatStatus {
+  reserved
+  confirmed
+  cancelled
+}
+
+enum PickupMode {
+  branch
+  user_location
+}
+
+enum PdfDocumentType {
+  passenger_manifest
+  contract
+  payment_receipt
+}
+
+enum NotificationType {
+  booking_confirmed
+  trip_reminder
+  cancellation
+  otp
+  manual
+}
+
+enum NotificationChannel {
+  sms
+  whatsapp
+  push
+}
+
+enum NotificationStatus {
+  sent
+  failed
+}
+
+enum ReportPeriod {
+  daily
+  monthly
+}
