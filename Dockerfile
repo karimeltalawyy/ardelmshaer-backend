@@ -18,4 +18,4 @@ COPY --from=builder /app/prisma ./prisma
 ENV CHROMIUM_PATH=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy || echo '[startup] migrate deploy failed, starting anyway' && node dist/main.js"]
