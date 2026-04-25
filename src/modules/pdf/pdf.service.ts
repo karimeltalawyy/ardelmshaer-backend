@@ -18,9 +18,14 @@ export class PdfService implements OnModuleInit, OnModuleDestroy {
   private browser!: Browser;
 
   async onModuleInit(): Promise<void> {
-    this.browser = await puppeteer.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
+    try {
+      this.browser = await puppeteer.launch({
+        executablePath: process.env.CHROMIUM_PATH || undefined,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+      });
+    } catch {
+      console.warn('[PdfService] Chrome not available — PDF generation disabled');
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -28,6 +33,7 @@ export class PdfService implements OnModuleInit, OnModuleDestroy {
   }
 
   async generateBookingManifest(data: BookingPdfData): Promise<Buffer> {
+    if (!this.browser) throw new Error('PDF service unavailable: Chrome not installed');
     const html = this.buildHtml(data);
     const page = await this.browser.newPage();
     try {
