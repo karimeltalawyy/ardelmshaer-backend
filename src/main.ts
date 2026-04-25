@@ -24,7 +24,10 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
 
   // Serve local uploads as static files (used when AWS is not configured)
-  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
+  const uploadsDir = join(process.cwd(), 'uploads');
+  const fs = await import('fs');
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  app.useStaticAssets(uploadsDir, { prefix: '/uploads' });
 
   app.enableCors({
     origin: true,
