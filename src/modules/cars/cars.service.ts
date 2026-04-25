@@ -224,6 +224,45 @@ export class CarsService {
     });
   }
 
+  // ─── Public: available car counts ────────────────────────────────────────────
+
+  async getAvailableCarCounts(requestedDate: string): Promise<{ starex: number; staria: number }> {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+      throw new BadRequestException('requestedDate must be YYYY-MM-DD');
+    }
+
+    const dayStart = new Date(`${requestedDate}T00:00:00.000Z`);
+    const dayEnd   = new Date(`${requestedDate}T23:59:59.999Z`);
+
+    const busyTrips = await this.prisma.trip.findMany({
+      where: {
+        status: { in: ['scheduled', 'in_progress'] },
+        departureAt: { gte: dayStart, lte: dayEnd },
+      },
+      select: { carId: true },
+    });
+
+    const busyCarIds = [...new Set(busyTrips.map((t) => t.carId))];
+
+    const available = await this.prisma.car.findMany({
+      where: {
+        carType: { in: ['starex', 'staria'] },
+        status: 'active',
+        ...(busyCarIds.length ? { id: { notIn: busyCarIds } } : {}),
+      },
+      select: { carType: true },
+    });
+
+    return available.reduce(
+      (acc, car) => {
+        if (car.carType === 'starex') acc.starex++;
+        else if (car.carType === 'staria') acc.staria++;
+        return acc;
+      },
+      { starex: 0, staria: 0 },
+    );
+  }
+
   // ─── Private helpers ──────────────────────────────────────────────────────────
 
   private async assertCarOwner(carId: string, userId: string) {

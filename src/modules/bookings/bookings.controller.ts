@@ -24,6 +24,8 @@ import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateGuestBookingDto } from './dto/create-guest-booking.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { UpdateBookingPassengersDto } from './dto/update-booking-passengers.dto';
+import { AssignTripDto } from './dto/assign-trip.dto';
+import { FulfillRequestDto } from './dto/fulfill-request.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -105,6 +107,33 @@ export class BookingsController {
   }
 
   // ─── Admin ────────────────────────────────────────────────────────────────────
+
+  @Post(':id/fulfill-request')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[Admin] Create a trip for a demand booking request and confirm it' })
+  fulfillRequest(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: any,
+    @Body() dto: FulfillRequestDto,
+  ) {
+    return this.bookingsService.fulfillRequest(id, dto, user.id);
+  }
+
+  @Patch(':id/assign-trip')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[Admin] Assign a scheduled trip to a demand booking request' })
+  assignTrip(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignTripDto,
+  ) {
+    return this.bookingsService.assignTrip(id, dto.tripId);
+  }
 
   @Get()
   @UseGuards(RolesGuard)

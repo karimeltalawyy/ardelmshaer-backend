@@ -11,6 +11,7 @@ import { CreateBookingDto } from './dto/create-booking.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { UpdateBookingPassengersDto } from './dto/update-booking-passengers.dto';
 import { CreateGuestBookingDto } from './dto/create-guest-booking.dto';
+import { FulfillRequestDto } from './dto/fulfill-request.dto';
 import { DocumentsService } from '../documents/documents.service';
 import { PdfService } from '../pdf/pdf.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
@@ -38,6 +39,8 @@ const BOOKING_INCLUDE = {
       driver: { include: { user: { select: { fullName: true, phone: true } } } },
     },
   },
+  origin: { select: { nameAr: true, nameEn: true } },
+  destination: { select: { nameAr: true, nameEn: true } },
   passengers: true,
   bookingSeats: {
     include: { carSeat: { select: { seatCode: true, position: true } } },
@@ -73,6 +76,17 @@ export class BookingsService {
   }
 
   private getCancellationContext(booking: any, isAdmin: boolean) {
+    if (!booking.trip) {
+      return {
+        canCancel: false,
+        blockedReason: 'طلب الحجز لم يُربط برحلة بعد',
+        refundPercent: 0,
+        estimatedRefundAmount: 0,
+        allowRiderCancellation: false,
+        cancellationCutoffHours: null,
+        policy: null,
+      };
+    }
     const hoursUntilDeparture = this.calcHoursUntilDeparture(booking.trip.departureAt);
     const trip = booking.trip;
     const policy = trip.cancellationPolicy;
@@ -420,128 +434,79 @@ export class BookingsService {
     });
   }
 
-  // ─── Create guest booking ────────────────────────────────────────────────────
+  // ─── Create guest booking (demand-driven request) ───────────────────────────
 
   async createGuest(dto: CreateGuestBookingDto): Promise<{
-    bookingId: string;
-    referenceNumber: string;
-    tripDetails: {
-      originNameAr: string;
-      destinationNameAr: string;
-      departureAt: Date;
-      driverName: string;
-      vehiclePlate: string;
-      carType: string;
-    };
+    id: string;
+    reference: string;
+    originName: string;
+    destinationName: string;
+    requestedDate: string;
+    carTypePreference: string;
   }> {
     if (dto.passengerCount !== dto.passengers.length) {
       throw new BadRequestException('عدد المسافرين لا يتطابق مع البيانات المُدخلة');
     }
+    if (dto.originId === dto.destinationId) {
+      throw new BadRequestException('نقطة الانطلاق والوجهة لا يمكن أن تكونا متطابقتين');
+    }
 
-    const normalizedPhone = normalizeSaudiPhone(dto.riderPhone);
+    const [origin, destination] = await Promise.all([
+      this.prisma.destination.findUnique({ where: { id: dto.originId } }),
+      this.prisma.destination.findUnique({ where: { id: dto.destinationId } }),
+    ]);
+    if (!origin) throw new NotFoundException('نقطة الانطلاق غير موجودة');
+    if (!destination) throw new NotFoundException('الوجهة غير موجودة');
 
-    const trip = await this.prisma.trip.findUnique({
-      where: { id: dto.tripId },
-      include: {
-        route: { include: { origin: true, destination: true } },
-        driver: { include: { user: true } },
-        car: true,
+    const booking = await this.prisma.booking.create({
+      data: {
+        bookingMode:       'whole_car',
+        basePrice:         0,
+        platformFee:       0,
+        driverPayout:      0,
+        totalPrice:        0,
+        paymentMethod:     'cash',
+        paymentStatus:     'pending',
+        status:            'confirmed',
+        pickupMode:        'user_location',
+        contactPhone:      dto.contactPhone,
+        seatCount:         dto.passengerCount,
+        originId:          dto.originId,
+        destinationId:     dto.destinationId,
+        requestedDate:     new Date(dto.requestedDate),
+        carTypePreference: dto.carTypePreference,
+        passengers: {
+          create: dto.passengers.map((p) => ({
+            fullName:    p.fullName,
+            nationality: p.nationality,
+            idNumber:    p.idNumber,
+            phone:       p.phone,
+          })),
+        },
       },
     });
 
-    if (!trip) throw new NotFoundException('الرحلة غير موجودة');
-    if (trip.status !== 'scheduled') throw new BadRequestException('الرحلة غير متاحة للحجز');
-    if (this.isTripServiceDateInPast(trip.departureAt)) {
-      throw new BadRequestException('انطلقت الرحلة بالفعل');
-    }
-    if (trip.bookingMode !== 'whole_car') throw new BadRequestException('يدعم الحجز العام السيارة كاملة فقط');
+    const reference = `AMS-${booking.bookingSerial.toString().padStart(6, '0')}`;
 
-    const basePrice = Number(trip.priceWholeCar ?? 0);
-    const commissionConfig = await this.prisma.platformConfig.findUnique({
-      where: { key: 'platform_commission_rate' },
-    });
-    const commissionRate = commissionConfig ? parseFloat(commissionConfig.value) : 0.1;
-    const platformFee = Math.round(basePrice * commissionRate * 100) / 100;
-    const driverPayout = basePrice - platformFee;
-
-    const booking = await this.prisma.$transaction(async (tx) => {
-      // Check inside transaction to prevent race condition
-      const existingBooking = await tx.booking.findFirst({
-        where: { tripId: dto.tripId, status: { not: 'cancelled' } },
-      });
-      if (existingBooking) throw new ConflictException('هذه الرحلة محجوزة بالفعل');
-
-      const b = await tx.booking.create({
-        data: {
-          tripId: dto.tripId,
-          riderName: dto.riderName,
-          riderPhone: normalizedPhone,
-          contactPhone: normalizedPhone,
-          bookingMode: 'whole_car',
-          seatCount: dto.passengerCount,
-          basePrice,
-          platformFee,
-          driverPayout,
-          totalPrice: basePrice,
-          paymentMethod: dto.paymentMethod,
-          paymentStatus: 'pending',
-          status: 'confirmed',
-          pickupMode: 'user_location',
-          pickupAddress: dto.pickupAddress,
-          passengers: {
-            create: dto.passengers.map((p) => ({
-              fullName: p.fullName,
-              nationality: p.nationality,
-              idNumber: p.idNumber,
-              phone: normalizedPhone,
-            })),
-          },
-        },
-      });
-      return b;
-    });
-
-    const referenceNumber = `AMS-${booking.bookingSerial.toString().padStart(6, '0')}`;
-
-    // Fire-and-forget — do NOT await these; a WhatsApp failure must not fail the booking
-    const notifyData = {
-      referenceNumber,
-      riderName: dto.riderName,
-      riderPhone: normalizedPhone,
-      originNameAr: trip.route.origin.nameAr,
-      destinationNameAr: trip.route.destination.nameAr,
-      departureAt: trip.departureAt,
-      passengerCount: dto.passengerCount,
-      passengers: dto.passengers,
-      vehiclePlate: trip.car?.plateNumber ?? '',
-      driverName: trip.driver?.user?.fullName ?? '',
-    };
-
-    this.pdfService.generateBookingManifest(notifyData).then((pdfBuffer) => {
-      this.whatsappService.notifyAdmin({ ...notifyData, pdfBuffer }).catch(() => {});
-    }).catch(() => {});
-
-    this.whatsappService.notifyRider({
-      riderPhone: normalizedPhone,
-      riderName: dto.riderName,
-      referenceNumber,
-      originNameAr: trip.route.origin.nameAr,
-      destinationNameAr: trip.route.destination.nameAr,
-      departureAt: trip.departureAt,
-      pickupAddress: dto.pickupAddress,
+    // Fire-and-forget — WhatsApp failure must not fail the booking
+    this.whatsappService.notifyAdminBookingRequest({
+      referenceNumber:   reference,
+      contactPhone:      dto.contactPhone,
+      originNameAr:      origin.nameAr,
+      destinationNameAr: destination.nameAr,
+      requestedDate:     dto.requestedDate,
+      carTypePreference: dto.carTypePreference,
+      passengerCount:    dto.passengerCount,
+      passengers:        dto.passengers,
     }).catch(() => {});
 
     return {
-      bookingId: booking.id,
-      referenceNumber,
-      tripDetails: {
-        originNameAr: trip.route.origin.nameAr,
-        destinationNameAr: trip.route.destination.nameAr,
-        departureAt: trip.departureAt,
-        driverName: trip.driver?.user?.fullName ?? '',
-        vehiclePlate: trip.car?.plateNumber ?? '',
-        carType: trip.car?.carType ?? '',
-      },
+      id:                booking.id,
+      reference,
+      originName:        origin.nameAr,
+      destinationName:   destination.nameAr,
+      requestedDate:     dto.requestedDate,
+      carTypePreference: dto.carTypePreference,
     };
   }
 
@@ -629,7 +594,7 @@ export class BookingsService {
       });
 
       // Restore available seats for per_seat trips
-      if (booking.bookingMode === 'per_seat' && booking.seatCount) {
+      if (booking.bookingMode === 'per_seat' && booking.seatCount && booking.tripId) {
         await tx.trip.update({
           where: { id: booking.tripId },
           data: { availableSeats: { increment: booking.seatCount } },
@@ -658,6 +623,7 @@ export class BookingsService {
     });
 
     if (!booking) throw new NotFoundException('Booking not found');
+    if (!booking.trip) throw new BadRequestException('لا يمكن تطبيق هذا الإجراء على طلب لم يُربط برحلة');
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const isAdmin = user?.role === 'admin';
@@ -689,6 +655,7 @@ export class BookingsService {
       include: { trip: { include: { driver: true } } },
     });
     if (!booking) throw new NotFoundException('Booking not found');
+    if (!booking.trip) throw new BadRequestException('لا يمكن تعديل ركاب طلب لم يُربط برحلة');
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const isAdmin = user?.role === 'admin';
@@ -729,6 +696,78 @@ export class BookingsService {
 
       return this.withCancellationMeta(updated, isAdmin);
     });
+  }
+
+  async fulfillRequest(bookingId: string, dto: FulfillRequestDto, adminUserId: string) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+    });
+    if (!booking) throw new NotFoundException('Booking not found');
+    if (booking.tripId) throw new BadRequestException('الطلب مرتبط برحلة بالفعل');
+    if (!booking.originId || !booking.destinationId)
+      throw new BadRequestException('الطلب لا يحتوي على وجهة محددة');
+
+    let route = await this.prisma.route.findFirst({
+      where: { originId: booking.originId, destinationId: booking.destinationId },
+    });
+    if (!route) {
+      route = await this.prisma.route.create({
+        data: {
+          originId: booking.originId,
+          destinationId: booking.destinationId,
+          estimatedDurationMin: 0,
+        },
+      });
+    }
+
+    const car = await this.prisma.car.findUnique({ where: { id: dto.carId } });
+    if (!car) throw new NotFoundException('Car not found');
+    if (car.status !== 'active') throw new BadRequestException('المركبة غير نشطة');
+
+    const departureAt = new Date(dto.departureAt);
+
+    return this.prisma.$transaction(async (tx) => {
+      const trip = await tx.trip.create({
+        data: {
+          carId: dto.carId,
+          driverId: car.driverId,
+          routeId: route.id,
+          departureAt,
+          createdBy: adminUserId,
+          bookingMode: 'whole_car',
+          totalSeats: car.totalSeats,
+          availableSeats: car.totalSeats,
+          allowRiderCancellation: false,
+          status: 'scheduled',
+        },
+      });
+
+      const updated = await tx.booking.update({
+        where: { id: bookingId },
+        data: { tripId: trip.id, status: 'confirmed' },
+        include: BOOKING_INCLUDE,
+      });
+
+      return this.withCancellationMeta(updated, true);
+    });
+  }
+
+  async assignTrip(bookingId: string, tripId: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) throw new NotFoundException('Booking not found');
+    if (booking.tripId) throw new BadRequestException('هذا الحجز مرتبط برحلة بالفعل');
+
+    const trip = await this.prisma.trip.findUnique({ where: { id: tripId } });
+    if (!trip) throw new NotFoundException('Trip not found');
+    if (trip.status !== 'scheduled') throw new BadRequestException('يمكن الربط بالرحلات المجدولة فقط');
+
+    const updated = await this.prisma.booking.update({
+      where: { id: bookingId },
+      data: { tripId, status: 'confirmed' },
+      include: BOOKING_INCLUDE,
+    });
+
+    return this.withCancellationMeta(updated, true);
   }
 
   private isTripServiceDateInPast(departureAt: Date): boolean {

@@ -160,4 +160,43 @@ export class WhatsappService {
 
     await this.sendText({ to: params.riderPhone, body });
   }
+
+  async notifyAdminBookingRequest(params: {
+    referenceNumber: string;
+    contactPhone: string;
+    originNameAr: string;
+    destinationNameAr: string;
+    requestedDate: string;
+    carTypePreference: 'starex' | 'staria';
+    passengerCount: number;
+    passengers: Array<{ fullName: string; idNumber: string; nationality: string; phone: string }>;
+  }): Promise<void> {
+    const carLabel = params.carTypePreference === 'starex' ? 'هيونداي ستاريكس' : 'هيونداي ستاريا';
+    const dateStr = new Intl.DateTimeFormat('ar-SA', {
+      year: 'numeric', month: 'long', day: 'numeric',
+      timeZone: 'Asia/Riyadh',
+    }).format(new Date(params.requestedDate));
+
+    const passengerLines = params.passengers
+      .map((p, i) => `${i + 1}. ${p.fullName} | ${p.idNumber} | ${p.nationality} | ${p.phone}`)
+      .join('\n');
+
+    const body = [
+      '🚗 *طلب حجز جديد*',
+      '',
+      `رقم الطلب: *${params.referenceNumber}*`,
+      `المسار: ${params.originNameAr} ← ${params.destinationNameAr}`,
+      `التاريخ المطلوب: ${dateStr}`,
+      `نوع السيارة: ${carLabel}`,
+      `عدد الركاب: ${params.passengerCount}`,
+      `هاتف التواصل: ${params.contactPhone}`,
+      '',
+      '*بيانات الركاب:*',
+      passengerLines,
+      '',
+      'يرجى التواصل مع العميل لتأكيد الرحلة.',
+    ].join('\n');
+
+    await this.sendText({ to: this.adminNumber, body });
+  }
 }

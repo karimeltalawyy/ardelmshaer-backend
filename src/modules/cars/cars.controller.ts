@@ -24,6 +24,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { CarType } from '@prisma/client';
 
 @ApiTags('Cars')
@@ -32,6 +33,16 @@ import { CarType } from '@prisma/client';
 @Controller('cars')
 export class CarsController {
   constructor(private readonly carsService: CarsService) {}
+
+  // ─── Public: available car counts ────────────────────────────────────────────
+
+  @Get('available')
+  @Public()
+  @ApiOperation({ summary: 'Get available Starex/Staria counts for a given date (no auth required)' })
+  @ApiQuery({ name: 'requestedDate', required: true, example: '2026-04-25' })
+  getAvailable(@Query('requestedDate') requestedDate: string) {
+    return this.carsService.getAvailableCarCounts(requestedDate);
+  }
 
   // ─── Car type configs (public to authenticated users) ─────────────────────────
 

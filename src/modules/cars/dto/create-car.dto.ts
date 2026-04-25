@@ -16,9 +16,9 @@ export class CreateCarDto {
   @IsUUID()
   driverId: string;
 
-  @ApiProperty({ enum: CarType })
-  @IsEnum(CarType)
-  carType: CarType;
+  @ApiProperty({ enum: ['starex', 'staria'] })
+  @IsEnum(['starex', 'staria'] as const)
+  carType: 'starex' | 'staria';
 
   @ApiProperty({ example: 'ABC 1234' })
   @IsString()

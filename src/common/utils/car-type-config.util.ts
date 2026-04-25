@@ -8,13 +8,9 @@ type CarTypeSeed = {
   labelEn: string;
 };
 
-const DEFAULT_CAR_TYPE_CONFIGS: Record<CarType, CarTypeSeed> = {
-  sedan: { bookingMode: 'whole_car', defaultCapacity: 4, labelAr: 'سيدان', labelEn: 'Sedan' },
-  family: { bookingMode: 'whole_car', defaultCapacity: 7, labelAr: 'عائلي', labelEn: 'Family' },
-  vip: { bookingMode: 'whole_car', defaultCapacity: 4, labelAr: 'في آي بي', labelEn: 'VIP' },
-  limousine: { bookingMode: 'whole_car', defaultCapacity: 6, labelAr: 'ليموزين', labelEn: 'Limousine' },
-  minibus: { bookingMode: 'per_seat', defaultCapacity: 14, labelAr: 'ميني باص', labelEn: 'Minibus' },
-  bus: { bookingMode: 'per_seat', defaultCapacity: 50, labelAr: 'باص', labelEn: 'Bus' },
+const DEFAULT_CAR_TYPE_CONFIGS: Partial<Record<CarType, CarTypeSeed>> = {
+  starex: { bookingMode: 'whole_car', defaultCapacity: 12, labelAr: 'هيونداي ستاريكس', labelEn: 'Hyundai Starex' },
+  staria: { bookingMode: 'whole_car', defaultCapacity: 11, labelAr: 'هيونداي ستاريا',  labelEn: 'Hyundai Staria' },
 };
 
 export async function ensureCarTypeConfig(
@@ -22,6 +18,7 @@ export async function ensureCarTypeConfig(
   carType: CarType,
 ) {
   const cfg = DEFAULT_CAR_TYPE_CONFIGS[carType];
+  if (!cfg) throw new Error(`Unsupported car type: ${carType}`);
   return prisma.carTypeConfig.upsert({
     where: { carType },
     update: {
@@ -49,4 +46,6 @@ export async function ensureAllCarTypeConfigs(prisma: PrismaService) {
     ),
   );
 }
+
+export const SUPPORTED_CAR_TYPES: CarType[] = ['starex', 'staria'];
 

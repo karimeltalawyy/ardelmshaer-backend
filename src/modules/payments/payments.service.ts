@@ -37,6 +37,7 @@ export class PaymentsService {
     });
 
     if (!booking) throw new NotFoundException('Booking not found');
+    if (!booking.trip) throw new BadRequestException('لا يمكن تحصيل دفعة لطلب لم يُربط برحلة');
 
     if (booking.trip.driver.userId !== driverUserId) {
       throw new ForbiddenException('This booking does not belong to your trip');
@@ -87,7 +88,7 @@ export class PaymentsService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const isAdmin = user?.role === 'admin';
     const isRider = booking.riderId === userId;
-    const isDriver = booking.trip.driver.userId === userId;
+    const isDriver = booking.trip?.driver.userId === userId;
 
     if (!isAdmin && !isRider && !isDriver) {
       throw new ForbiddenException('Access denied');

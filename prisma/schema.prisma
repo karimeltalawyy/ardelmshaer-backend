@@ -136,8 +136,10 @@ model Destination {
   region              String
   sortOrder           Int             @default(0) @map("sort_order")
   isActive            Boolean         @default(true) @map("is_active")
-  routesAsDestination Route[]         @relation("RouteDestination")
-  routesAsOrigin      Route[]         @relation("RouteOrigin")
+  routesAsDestination   Route[]         @relation("RouteDestination")
+  routesAsOrigin        Route[]         @relation("RouteOrigin")
+  bookingsAsOrigin      Booking[]       @relation("BookingOrigin")
+  bookingsAsDestination Booking[]       @relation("BookingDestination")
 
   @@map("destinations")
 }
@@ -275,7 +277,7 @@ model Booking {
   riderId            String?           @map("rider_id") @db.Uuid
   riderName          String?           @map("rider_name")
   riderPhone         String?           @map("rider_phone")
-  tripId             String            @map("trip_id") @db.Uuid
+  tripId             String?           @map("trip_id") @db.Uuid
   bookingMode        BookingMode       @map("booking_mode")
   seatCount          Int?              @map("seat_count")
   basePrice          Decimal           @map("base_price") @db.Decimal(10, 2)
@@ -295,10 +297,16 @@ model Booking {
   pickupMode         PickupMode        @default(branch) @map("pickup_mode")
   bookingSerial      Int               @unique @default(autoincrement()) @map("booking_serial")
   contactPhone       String            @default("") @map("contact_phone")
+  originId           String?           @map("origin_id") @db.Uuid
+  destinationId      String?           @map("destination_id") @db.Uuid
+  requestedDate      DateTime?         @map("requested_date")
+  carTypePreference  CarType?          @map("car_type_preference")
   bookingSeats       BookingSeat[]
   pickupBranch       CompanyBranch?    @relation(fields: [pickupBranchId], references: [id])
   rider              User?             @relation(fields: [riderId], references: [id])
-  trip               Trip              @relation(fields: [tripId], references: [id])
+  trip               Trip?             @relation(fields: [tripId], references: [id])
+  origin             Destination?      @relation("BookingOrigin", fields: [originId], references: [id])
+  destination        Destination?      @relation("BookingDestination", fields: [destinationId], references: [id])
   documents          Document[]
   notifications      NotificationLog[]
   passengers         Passenger[]
@@ -447,6 +455,8 @@ enum CarType {
   limousine
   minibus
   bus
+  starex
+  staria
 }
 
 enum BookingMode {

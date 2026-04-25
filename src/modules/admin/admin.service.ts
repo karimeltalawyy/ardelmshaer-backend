@@ -66,6 +66,8 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
       include: {
         rider: { select: { fullName: true } },
+        origin: { select: { nameAr: true } },
+        destination: { select: { nameAr: true } },
         trip: {
           include: {
             route: {
@@ -93,7 +95,9 @@ export class AdminService {
       recentBookings: recentBookings.map((b) => ({
         id: b.id,
         rider: b.rider?.fullName ?? '',
-        route: `${b.trip.route.origin.nameAr} → ${b.trip.route.destination.nameAr}`,
+        route: b.trip
+          ? `${b.trip.route.origin.nameAr} → ${b.trip.route.destination.nameAr}`
+          : `${b.origin?.nameAr ?? ''} → ${b.destination?.nameAr ?? ''}`,
         status: b.status,
         paymentStatus: b.paymentStatus,
         totalPrice: Number(b.totalPrice),
