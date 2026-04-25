@@ -17,4 +17,4 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/prisma ./prisma
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 EXPOSE 3000
-CMD ["sh", "-c", "timeout 20 npx prisma migrate deploy; node dist/main.js"]
+CMD ["sh", "-c", "timeout 20 npx prisma migrate deploy; node prisma/seed-destinations.js; node dist/main.js"]
