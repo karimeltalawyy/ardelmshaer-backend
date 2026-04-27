@@ -443,6 +443,7 @@ export class BookingsService {
     destinationName: string;
     requestedDate: string;
     carTypePreference: string;
+    totalPrice: number;
   }> {
     if (dto.passengerCount !== dto.passengers.length) {
       throw new BadRequestException('عدد المسافرين لا يتطابق مع البيانات المُدخلة');
@@ -458,13 +459,30 @@ export class BookingsService {
     if (!origin) throw new NotFoundException('نقطة الانطلاق غير موجودة');
     if (!destination) throw new NotFoundException('الوجهة غير موجودة');
 
+    const route = await this.prisma.route.findUnique({
+      where: {
+        originId_destinationId: {
+          originId: dto.originId,
+          destinationId: dto.destinationId,
+        },
+      },
+    });
+    if (!route) throw new BadRequestException('لا يوجد مسار بين هاتين الوجهتين');
+
+    const pricing = await this.prisma.routePricing.findFirst({
+      where: { routeId: route.id, carType: dto.carTypePreference, isActive: true },
+    });
+    if (!pricing) throw new BadRequestException('لم يتم تحديد سعر لهذا المسار');
+
+    const actualPrice = pricing.basePrice;
+
     const booking = await this.prisma.booking.create({
       data: {
         bookingMode:       'whole_car',
-        basePrice:         0,
+        basePrice:         actualPrice,
         platformFee:       0,
         driverPayout:      0,
-        totalPrice:        0,
+        totalPrice:        actualPrice,
         paymentMethod:     'cash',
         paymentStatus:     'pending',
         status:            'confirmed',
@@ -507,6 +525,7 @@ export class BookingsService {
       destinationName:   destination.nameAr,
       requestedDate:     dto.requestedDate,
       carTypePreference: dto.carTypePreference,
+      totalPrice:        Number(actualPrice),
     };
   }
 
