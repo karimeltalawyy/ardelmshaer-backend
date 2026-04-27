@@ -263,6 +263,72 @@ export class CarsService {
     );
   }
 
+  // ─── Public: car options with route pricing ──────────────────────────────────
+
+  async getCarOptions(
+    originId: string,
+    destinationId: string,
+    requestedDate: string,
+  ): Promise<{
+    starex: { count: number; price: number | null };
+    staria: { count: number; price: number | null };
+  }> {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+      throw new BadRequestException('requestedDate must be YYYY-MM-DD');
+    }
+
+    const route = await this.prisma.route.findUnique({
+      where: { originId_destinationId: { originId, destinationId } },
+      include: {
+        pricings: {
+          where: { isActive: true, carType: { in: ['starex', 'staria'] } },
+        },
+      },
+    });
+    if (!route) throw new NotFoundException('No route found for these destinations');
+
+    const priceMap: Record<string, number | null> = { starex: null, staria: null };
+    for (const p of route.pricings) {
+      priceMap[p.carType] = Number(p.basePrice);
+    }
+
+    const dayStart = new Date(`${requestedDate}T00:00:00.000Z`);
+    const dayEnd   = new Date(`${requestedDate}T23:59:59.999Z`);
+
+    const busyTrips = await this.prisma.trip.findMany({
+      where: {
+        status: { in: ['scheduled', 'in_progress'] },
+        departureAt: { gte: dayStart, lte: dayEnd },
+      },
+      select: { carId: true },
+    });
+
+    const busyCarIds = [...new Set(busyTrips.map((t) => t.carId))];
+
+    const available = await this.prisma.car.findMany({
+      where: {
+        carType: { in: ['starex', 'staria'] },
+        status: 'active',
+        ...(busyCarIds.length ? { id: { notIn: busyCarIds } } : {}),
+      },
+      select: { carType: true },
+    });
+
+    const counts = available.reduce(
+      (acc, car) => {
+        if (car.carType === 'starex') acc.starex++;
+        else if (car.carType === 'staria') acc.staria++;
+        return acc;
+      },
+      { starex: 0, staria: 0 },
+    );
+
+    return {
+      starex: { count: counts.starex, price: priceMap['starex'] },
+      staria: { count: counts.staria, price: priceMap['staria'] },
+    };
+  }
+
   // ─── Private helpers ──────────────────────────────────────────────────────────
 
   private async assertCarOwner(carId: string, userId: string) {

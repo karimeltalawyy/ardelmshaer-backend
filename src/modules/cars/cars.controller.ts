@@ -44,6 +44,20 @@ export class CarsController {
     return this.carsService.getAvailableCarCounts(requestedDate);
   }
 
+  @Get('options')
+  @Public()
+  @ApiOperation({ summary: 'Get car availability + route pricing for a given origin, destination, and date (no auth required)' })
+  @ApiQuery({ name: 'originId',      required: true })
+  @ApiQuery({ name: 'destinationId', required: true })
+  @ApiQuery({ name: 'requestedDate', required: true, example: '2026-05-01' })
+  getOptions(
+    @Query('originId')      originId: string,
+    @Query('destinationId') destinationId: string,
+    @Query('requestedDate') requestedDate: string,
+  ) {
+    return this.carsService.getCarOptions(originId, destinationId, requestedDate);
+  }
+
   // ─── Car type configs (public to authenticated users) ─────────────────────────
 
   @Get('types')
