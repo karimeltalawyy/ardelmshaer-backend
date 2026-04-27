@@ -51,9 +51,9 @@ export class CarsController {
   @ApiQuery({ name: 'destinationId', required: true })
   @ApiQuery({ name: 'requestedDate', required: true, example: '2026-05-01' })
   getOptions(
-    @Query('originId')      originId: string,
-    @Query('destinationId') destinationId: string,
-    @Query('requestedDate') requestedDate: string,
+    @Query('originId', ParseUUIDPipe)      originId: string,
+    @Query('destinationId', ParseUUIDPipe) destinationId: string,
+    @Query('requestedDate')                requestedDate: string,
   ) {
     return this.carsService.getCarOptions(originId, destinationId, requestedDate);
   }
