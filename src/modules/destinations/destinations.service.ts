@@ -53,4 +53,9 @@ export class DestinationsService {
       data: { isActive: false },
     });
   }
+
+  async delete(id: string) {
+    await this.findOne(id);
+    return this.prisma.destination.delete({ where: { id } });
+  }
 }

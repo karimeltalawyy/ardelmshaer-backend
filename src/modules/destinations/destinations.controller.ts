@@ -74,8 +74,8 @@ export class DestinationsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  @ApiOperation({ summary: '[Admin] Deactivate a destination (soft delete)' })
-  deactivate(@Param('id', ParseUUIDPipe) id: string) {
-    return this.destinationsService.deactivate(id);
+  @ApiOperation({ summary: '[Admin] Hard-delete a destination' })
+  delete(@Param('id', ParseUUIDPipe) id: string) {
+    return this.destinationsService.delete(id);
   }
 }

@@ -78,6 +78,14 @@ export class RoutesController {
     return this.routesService.setPricing(id, dto);
   }
 
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: '[Admin] Delete a route and its pricings' })
+  deleteRoute(@Param('id', ParseUUIDPipe) id: string) {
+    return this.routesService.deleteRoute(id);
+  }
+
   @Delete('pricing/:pricingId')
   @UseGuards(RolesGuard)
   @Roles('admin')

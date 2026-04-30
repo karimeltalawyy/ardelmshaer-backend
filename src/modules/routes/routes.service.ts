@@ -114,6 +114,11 @@ export class RoutesService {
     });
   }
 
+  async deleteRoute(id: string) {
+    await this.findOne(id);
+    return this.prisma.route.delete({ where: { id } });
+  }
+
   async removePricing(pricingId: string) {
     const pricing = await this.prisma.routePricing.findUnique({
       where: { id: pricingId },
