@@ -99,6 +99,14 @@ export class CarsController {
     return this.carsService.update(id, user.id, dto);
   }
 
+  @Delete(':id/hard')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: '[Admin] Hard delete a car permanently' })
+  hardDeleteCar(@Param('id', ParseUUIDPipe) id: string) {
+    return this.carsService.hardDelete(id);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Deactivate a car (owner only)' })
   deactivate(

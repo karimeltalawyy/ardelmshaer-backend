@@ -168,6 +168,14 @@ export class CarsService {
     });
   }
 
+  // ─── Hard delete ─────────────────────────────────────────────────────────────
+
+  async hardDelete(carId: string) {
+    const car = await this.prisma.car.findUnique({ where: { id: carId } });
+    if (!car) throw new NotFoundException('Car not found');
+    return this.prisma.car.delete({ where: { id: carId } });
+  }
+
   // ─── Seats ────────────────────────────────────────────────────────────────────
 
   async setSeats(carId: string, userId: string, dto: CreateSeatsDto) {
