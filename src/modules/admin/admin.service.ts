@@ -279,10 +279,45 @@ export class AdminService {
   async deleteUser(userId: string, adminId: string) {
     if (userId === adminId) throw new BadRequestException('Cannot delete your own account');
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { driverProfile: { select: { id: true } } },
+    });
     if (!user) throw new NotFoundException('User not found');
 
     await this.prisma.$transaction(async (tx) => {
+      // ── Driver-specific cleanup ─────────────────────────────────────────
+      // Must happen before deleting DriverProfile (which cascades Car → CarSeat),
+      // because BookingSeat.carSeatId → CarSeat is a blocking FK.
+      if (user.driverProfile) {
+        const driverProfileId = user.driverProfile.id;
+
+        const trips = await tx.trip.findMany({
+          where: { driverId: driverProfileId },
+          select: { id: true },
+        });
+        const tripIds = trips.map((t) => t.id);
+
+        if (tripIds.length > 0) {
+          const bookings = await tx.booking.findMany({
+            where: { tripId: { in: tripIds } },
+            select: { id: true },
+          });
+          const bookingIds = bookings.map((b) => b.id);
+
+          if (bookingIds.length > 0) {
+            // NotificationLog.bookingId is NOT NULL — delete before bookings
+            await tx.notificationLog.deleteMany({ where: { bookingId: { in: bookingIds } } });
+            // Booking cascade removes: BookingSeat, Passenger, Document
+            await tx.booking.deleteMany({ where: { id: { in: bookingIds } } });
+          }
+
+          // Trips can now be removed (no more booking or carSeat FK references)
+          await tx.trip.deleteMany({ where: { driverId: driverProfileId } });
+        }
+      }
+
+      // ── Shared user-level cleanup ───────────────────────────────────────
       // Nullify rider reference on bookings (riderId is nullable)
       await tx.booking.updateMany({ where: { riderId: userId }, data: { riderId: null } });
       // Reassign trips created by this user to the deleting admin
@@ -293,9 +328,9 @@ export class AdminService {
       await tx.auditLog.updateMany({ where: { adminId: userId }, data: { adminId } });
       // Delete notification logs for this user
       await tx.notificationLog.deleteMany({ where: { userId } });
-      // Nullify approvedBy on driver profiles approved by this admin (nullable field)
+      // Nullify approvedBy on driver profiles approved by this admin (nullable)
       await tx.driverProfile.updateMany({ where: { approvedBy: userId }, data: { approvedBy: null } });
-      // Remove sessions, driver documents and profile
+      // Remove sessions, driver docs and profile (Car + CarSeat cascade from profile)
       await tx.userSession.deleteMany({ where: { userId } });
       await tx.driverDocument.deleteMany({ where: { driver: { userId } } });
       await tx.driverProfile.deleteMany({ where: { userId } });
