@@ -202,10 +202,6 @@ export class AdminService {
     }
 
     const role = dto.role ?? 'rider';
-    if (role === 'driver' && !dto.licenseNumber) {
-      throw new BadRequestException('licenseNumber is required for driver users');
-    }
-
     const hashedPassword = await bcrypt.hash(dto.password, 12);
 
     const created = await this.prisma.$transaction(async (tx) => {
@@ -226,7 +222,7 @@ export class AdminService {
         await tx.driverProfile.create({
           data: {
             userId: user.id,
-            licenseNumber: dto.licenseNumber!,
+            licenseNumber: dto.licenseNumber ?? '',
             approvalStatus: 'approved',
             approvedBy: adminId,
             approvedAt: new Date(),
