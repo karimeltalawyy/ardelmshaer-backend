@@ -35,7 +35,7 @@ export class RoutesService {
       data: {
         originId: dto.originId,
         destinationId: dto.destinationId,
-        estimatedDurationMin: dto.estimatedDurationMin,
+        estimatedDurationMin: dto.estimatedDurationMin ?? 0,
       },
       include: {
         origin: true,

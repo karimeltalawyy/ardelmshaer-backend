@@ -1,4 +1,4 @@
-import { IsInt, IsPositive, IsUUID } from 'class-validator';
+import { IsInt, IsOptional, IsUUID, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateRouteDto {
@@ -10,8 +10,9 @@ export class CreateRouteDto {
   @IsUUID()
   destinationId: string;
 
-  @ApiProperty({ example: 540, description: 'Estimated travel time in minutes' })
+  @ApiProperty({ example: 540, description: 'Estimated travel time in minutes', required: false })
+  @IsOptional()
   @IsInt()
-  @IsPositive()
-  estimatedDurationMin: number;
+  @Min(0)
+  estimatedDurationMin?: number;
 }
