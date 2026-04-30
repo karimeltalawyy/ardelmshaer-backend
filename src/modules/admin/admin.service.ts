@@ -262,10 +262,22 @@ export class AdminService {
     if (!user) throw new NotFoundException('User not found');
     if (user.id === adminId) throw new BadRequestException('Cannot change your own role');
 
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data: { role: dto.role as any },
-      select: { id: true, fullName: true, email: true, role: true, status: true },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedUser = await tx.user.update({
+        where: { id: userId },
+        data: { role: dto.role as any },
+        select: { id: true, fullName: true, email: true, role: true, status: true },
+      });
+
+      if (dto.role === 'driver') {
+        await tx.driverProfile.upsert({
+          where: { userId },
+          update: { approvalStatus: 'approved', approvedBy: adminId, approvedAt: new Date() },
+          create: { userId, licenseNumber: '', approvalStatus: 'approved', approvedBy: adminId, approvedAt: new Date() },
+        });
+      }
+
+      return updatedUser;
     });
 
     await this.writeAuditLog(adminId, 'User', userId, 'update_role', { role: user.role }, { role: dto.role });
@@ -534,6 +546,33 @@ export class AdminService {
     });
     await this.writeAuditLog(adminId, 'CancellationPolicy', id, 'deactivate', { isActive: true }, { isActive: false });
     return updated;
+  }
+
+  // ─── Car management helpers ───────────────────────────────────────────────────
+
+  async getDriversForCarManagement() {
+    // Returns all users with role=driver, upserts a DriverProfile for any that lack one,
+    // so the car creation form always has a reliable driverProfile.id to use.
+    const driverUsers = await this.prisma.user.findMany({
+      where: { role: 'driver' },
+      include: { driverProfile: { select: { id: true } } },
+      orderBy: { fullName: 'asc' },
+    });
+
+    const result: { id: string; user: { fullName: string; email: string } }[] = [];
+
+    for (const u of driverUsers) {
+      let profileId = u.driverProfile?.id;
+      if (!profileId) {
+        const created = await this.prisma.driverProfile.create({
+          data: { userId: u.id, licenseNumber: '', approvalStatus: 'approved' },
+        });
+        profileId = created.id;
+      }
+      result.push({ id: profileId, user: { fullName: u.fullName, email: u.email } });
+    }
+
+    return result;
   }
 
   // ─── Audit Logs ───────────────────────────────────────────────────────────────

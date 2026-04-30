@@ -53,6 +53,12 @@ export class AdminController {
 
   // ─── Users ────────────────────────────────────────────────────────────────────
 
+  @Get('drivers-for-cars')
+  @ApiOperation({ summary: 'List all driver-role users with their driverProfile.id for car management' })
+  getDriversForCarManagement() {
+    return this.adminService.getDriversForCarManagement();
+  }
+
   @Get('users')
   @ApiOperation({ summary: 'List all users' })
   @ApiQuery({ name: 'role', required: false, enum: ['rider', 'driver', 'admin'] })
