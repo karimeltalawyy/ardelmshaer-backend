@@ -67,12 +67,19 @@ export class AuthService {
   // ─── Login ───────────────────────────────────────────────────────────────────
 
   async login(dto: LoginDto, deviceInfo?: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+    let user = await this.prisma.user.findUnique({
+      where: { email: dto.identifier },
     });
 
     if (!user) {
-      throw new UnauthorizedException('Invalid email or password');
+      const byId = await this.prisma.user.findFirst({
+        where: { idNumber: dto.identifier },
+      });
+      if (byId?.idNumber) user = byId;
+    }
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     if (user.status === 'suspended') {
@@ -81,7 +88,7 @@ export class AuthService {
 
     const passwordMatch = await bcrypt.compare(dto.password, user.password);
     if (!passwordMatch) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     const tokens = await this.createSession(user.id, user.role, deviceInfo);
