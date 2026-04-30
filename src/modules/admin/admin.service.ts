@@ -279,24 +279,23 @@ export class AdminService {
   async deleteUser(userId: string, adminId: string) {
     if (userId === adminId) throw new BadRequestException('Cannot delete your own account');
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { _count: { select: { bookings: true, sessions: true, createdTrips: true } } },
-    });
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    const hasOperationalData = user._count.bookings > 0 || user._count.createdTrips > 0;
-    if (hasOperationalData) {
-      const suspended = await this.prisma.user.update({
-        where: { id: userId },
-        data: { status: 'suspended' },
-        select: { id: true, fullName: true, email: true, role: true, status: true },
-      });
-      await this.writeAuditLog(adminId, 'User', userId, 'suspend_instead_of_delete', { status: user.status }, { status: 'suspended' });
-      return { deleted: false, suspended: true, user: suspended };
-    }
-
     await this.prisma.$transaction(async (tx) => {
+      // Nullify rider reference on bookings (riderId is nullable)
+      await tx.booking.updateMany({ where: { riderId: userId }, data: { riderId: null } });
+      // Reassign trips created by this user to the deleting admin
+      await tx.trip.updateMany({ where: { createdBy: userId }, data: { createdBy: adminId } });
+      // Reassign platform configs last updated by this user to the deleting admin
+      await tx.platformConfig.updateMany({ where: { updatedBy: userId }, data: { updatedBy: adminId } });
+      // Reassign audit logs authored by this user to the deleting admin
+      await tx.auditLog.updateMany({ where: { adminId: userId }, data: { adminId } });
+      // Delete notification logs for this user
+      await tx.notificationLog.deleteMany({ where: { userId } });
+      // Nullify approvedBy on driver profiles approved by this admin (nullable field)
+      await tx.driverProfile.updateMany({ where: { approvedBy: userId }, data: { approvedBy: null } });
+      // Remove sessions, driver documents and profile
       await tx.userSession.deleteMany({ where: { userId } });
       await tx.driverDocument.deleteMany({ where: { driver: { userId } } });
       await tx.driverProfile.deleteMany({ where: { userId } });
