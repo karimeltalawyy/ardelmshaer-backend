@@ -542,16 +542,44 @@ export class AdminService {
 
   // ─── Audit Logs ───────────────────────────────────────────────────────────────
 
-  async getAuditLogs(entityType?: string, adminId?: string) {
-    return this.prisma.auditLog.findMany({
-      where: {
-        ...(entityType ? { entityType } : {}),
-        ...(adminId ? { adminId } : {}),
-      },
-      include: { admin: { select: { fullName: true, email: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
+  async getAuditLogs(filters: {
+    entityType?: string;
+    adminId?: string;
+    action?: string;
+    search?: string;
+    from?: string;
+    to?: string;
+    page?: number;
+    limit?: number;
+  } = {}) {
+    const { entityType, adminId, action, search, from, to, page = 1, limit = 50 } = filters;
+    const where: any = {
+      ...(entityType ? { entityType } : {}),
+      ...(adminId ? { adminId } : {}),
+      ...(action ? { action } : {}),
+      ...(from || to ? {
+        createdAt: {
+          ...(from ? { gte: new Date(from) } : {}),
+          ...(to ? { lte: new Date(to + 'T23:59:59') } : {}),
+        },
+      } : {}),
+      ...(search ? {
+        admin: { fullName: { contains: search, mode: 'insensitive' } },
+      } : {}),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.auditLog.findMany({
+        where,
+        include: { admin: { select: { id: true, fullName: true, email: true, role: true } } },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+
+    return { items, total, page, limit };
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────────

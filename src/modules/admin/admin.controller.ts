@@ -206,12 +206,33 @@ export class AdminController {
 
   @Get('audit-logs')
   @ApiOperation({ summary: 'View admin action audit trail' })
-  @ApiQuery({ name: 'entityType', required: false, description: 'Filter by entity (User, PlatformConfig, CancellationPolicy, ...)' })
+  @ApiQuery({ name: 'entityType', required: false })
   @ApiQuery({ name: 'adminId', required: false })
+  @ApiQuery({ name: 'action', required: false })
+  @ApiQuery({ name: 'search', required: false, description: 'Search by admin name' })
+  @ApiQuery({ name: 'from', required: false, description: 'Start date YYYY-MM-DD' })
+  @ApiQuery({ name: 'to', required: false, description: 'End date YYYY-MM-DD' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
   getAuditLogs(
     @Query('entityType') entityType?: string,
     @Query('adminId') adminId?: string,
+    @Query('action') action?: string,
+    @Query('search') search?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.adminService.getAuditLogs(entityType, adminId);
+    return this.adminService.getAuditLogs({
+      entityType,
+      adminId,
+      action,
+      search,
+      from,
+      to,
+      page: page ? +page : 1,
+      limit: limit ? +limit : 50,
+    });
   }
 }
