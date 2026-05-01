@@ -19,6 +19,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { CompanyBranchesModule } from './modules/company-branches/company-branches.module';
 import { PdfModule } from './modules/pdf/pdf.module';
 import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
+import { DailyInspectionsModule } from './modules/daily-inspections/daily-inspections.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
     CompanyBranchesModule,
     PdfModule,
     WhatsappModule,
+    DailyInspectionsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

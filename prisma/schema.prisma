@@ -63,11 +63,12 @@ model DriverProfile {
   rejectionReason String?              @map("rejection_reason")
   approvedBy      String?              @map("approved_by") @db.Uuid
   approvedAt      DateTime?            @map("approved_at")
-  cars            Car[]
-  documents       DriverDocument[]
-  approvedByUser  User?                @relation("ApprovedByAdmin", fields: [approvedBy], references: [id])
-  user            User                 @relation("DriverUser", fields: [userId], references: [id], onDelete: Cascade)
-  trips           Trip[]
+  cars              Car[]
+  documents         DriverDocument[]
+  dailyInspections  DailyInspection[]
+  approvedByUser    User?                @relation("ApprovedByAdmin", fields: [approvedBy], references: [id])
+  user              User                 @relation("DriverUser", fields: [userId], references: [id], onDelete: Cascade)
+  trips             Trip[]
 
   @@map("driver_profiles")
 }
@@ -554,4 +555,21 @@ enum NotificationStatus {
 enum ReportPeriod {
   daily
   monthly
+}
+
+model DailyInspection {
+  id             String        @id @default(uuid()) @db.Uuid
+  driverId       String        @map("driver_id") @db.Uuid
+  driverName     String        @map("driver_name")
+  plateNumber    String        @map("plate_number")
+  inspectionDate DateTime      @map("inspection_date") @db.Date
+  inspectionTime String        @map("inspection_time") @db.VarChar(8)
+  checklist      Json
+  submittedAt    DateTime      @default(now()) @map("submitted_at")
+  pdfUrl         String?       @map("pdf_url")
+
+  driver         DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@unique([driverId, inspectionDate])
+  @@map("daily_inspections")
 }
