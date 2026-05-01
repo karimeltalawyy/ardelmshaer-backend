@@ -315,8 +315,8 @@ export class TripsService {
           create: dto.passengers.map((p) => ({
             fullName: p.fullName,
             nationality: p.nationality,
-            idNumber: p.idNumber,
-            phone: p.phone,
+            idNumber: p.idNumber ?? '',
+            phone: p.phone ?? '',
           })),
         },
       },

@@ -1,5 +1,5 @@
-import { IsString, MinLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class PassengerDto {
   @ApiProperty({ example: 'Ahmed Al-Rashidi' })
@@ -12,13 +12,13 @@ export class PassengerDto {
   @MinLength(2)
   nationality: string;
 
-  @ApiProperty({ example: '1098765432' })
+  @ApiPropertyOptional({ example: '1098765432' })
+  @IsOptional()
   @IsString()
-  @MinLength(5)
-  idNumber: string;
+  idNumber?: string;
 
-  @ApiProperty({ example: '+966501234567' })
+  @ApiPropertyOptional({ example: '+966501234567', description: 'No longer required — omit if not collected' })
+  @IsOptional()
   @IsString()
-  @MinLength(7)
-  phone: string;
+  phone?: string;
 }

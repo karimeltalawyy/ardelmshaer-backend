@@ -333,7 +333,7 @@ model Passenger {
   bookingId    String        @map("booking_id") @db.Uuid
   fullName     String        @map("full_name")
   nationality  String
-  idNumber     String        @map("id_number")
+  idNumber     String        @default("") @map("id_number")
   phone        String        @default("")
   bookingSeats BookingSeat[]
   booking      Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
