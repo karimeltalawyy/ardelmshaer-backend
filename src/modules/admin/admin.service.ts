@@ -625,12 +625,10 @@ export class AdminService {
 
     await this.prisma.$transaction(async (tx) => {
       await tx.notificationLog.deleteMany({ where: { bookingId } });
-      await tx.bookingSeat.deleteMany({ where: { bookingId } });
-      await tx.passenger.deleteMany({ where: { bookingId } });
       await tx.booking.delete({ where: { id: bookingId } });
     });
 
-    await this.writeAuditLog(adminId, 'Booking', bookingId, 'delete', { bookingNumber: booking.bookingNumber }, null);
+    await this.writeAuditLog(adminId, 'Booking', bookingId, 'delete', { bookingSerial: booking.bookingSerial }, null);
     return { success: true };
   }
 
