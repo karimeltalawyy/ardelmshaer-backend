@@ -208,6 +208,18 @@ export class AdminController {
     return this.adminService.deleteCancellationPolicy(id, admin.id);
   }
 
+  // ─── Bookings ─────────────────────────────────────────────────────────────────
+
+  @Delete('bookings/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Hard-delete a booking (admin only)' })
+  deleteBooking(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin: any,
+  ) {
+    return this.adminService.deleteBooking(id, admin.id);
+  }
+
   // ─── Audit Logs ───────────────────────────────────────────────────────────────
 
   @Get('audit-logs')

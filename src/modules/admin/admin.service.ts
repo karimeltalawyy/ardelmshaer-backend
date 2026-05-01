@@ -617,6 +617,23 @@ export class AdminService {
     return { items, total, page, limit };
   }
 
+  // ─── Bookings ─────────────────────────────────────────────────────────────────
+
+  async deleteBooking(bookingId: string, adminId: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) throw new NotFoundException('Booking not found');
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.notificationLog.deleteMany({ where: { bookingId } });
+      await tx.bookingSeat.deleteMany({ where: { bookingId } });
+      await tx.passenger.deleteMany({ where: { bookingId } });
+      await tx.booking.delete({ where: { id: bookingId } });
+    });
+
+    await this.writeAuditLog(adminId, 'Booking', bookingId, 'delete', { bookingNumber: booking.bookingNumber }, null);
+    return { success: true };
+  }
+
   // ─── Private helpers ──────────────────────────────────────────────────────────
 
   private async writeAuditLog(
