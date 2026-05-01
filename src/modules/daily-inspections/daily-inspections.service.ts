@@ -82,6 +82,42 @@ export class DailyInspectionsService {
     }));
   }
 
+  async getDriversTodayStatus() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const drivers = await this.prisma.driverProfile.findMany({
+      where: { user: { status: 'active' } },
+      include: {
+        user: { select: { fullName: true, email: true } },
+        dailyInspections: {
+          where: { inspectionDate: today },
+          take: 1,
+        },
+      },
+      orderBy: { user: { fullName: 'asc' } },
+    });
+
+    return drivers.map((d) => {
+      const record = d.dailyInspections[0] ?? null;
+      return {
+        driverId: d.id,
+        driverFullName: d.user.fullName,
+        driverEmail: d.user.email,
+        submitted: !!record,
+        record: record ? this.formatRecord(record) : null,
+      };
+    });
+  }
+
+  async getDriverInspectionHistory(driverId: string) {
+    const records = await this.prisma.dailyInspection.findMany({
+      where: { driverId },
+      orderBy: { inspectionDate: 'desc' },
+    });
+    return records.map((r) => this.formatRecord(r));
+  }
+
   private formatRecord(r: any) {
     return {
       id: r.id,

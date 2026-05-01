@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -51,5 +51,21 @@ export class DailyInspectionsController {
   findByDate(@Query('date') date?: string) {
     const target = date ?? new Date().toISOString().slice(0, 10);
     return this.service.findByDate(target);
+  }
+
+  @Get('admin/daily-inspections/drivers/today-status')
+  @Roles('admin')
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'All drivers with today inspection status (admin)' })
+  getDriversTodayStatus() {
+    return this.service.getDriversTodayStatus();
+  }
+
+  @Get('admin/daily-inspections/driver/:driverId/history')
+  @Roles('admin')
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: "Get a specific driver's full inspection history (admin)" })
+  getDriverInspectionHistory(@Param('driverId') driverId: string) {
+    return this.service.getDriverInspectionHistory(driverId);
   }
 }
