@@ -126,7 +126,7 @@ If `trip_id` is null, assign a trip to this booking in admin (same flow as “ر
 
 Other **400** messages after a trip exists: incomplete **route**, **driver**, or **car** on that trip (data integrity).
 
-PDF generation in Docker uses Puppeteer with **`domcontentloaded`** (not waiting on external font networks). Optional **`CHROMIUM_PATH`** matches other PDF code paths if Chrome is installed system-wide.
+PDF generation in Docker uses system **`chromium`** from the image (`CHROMIUM_PATH=/usr/bin/chromium`) because Puppeteer’s default browser lives under **`~/.cache/puppeteer`**, which is **not** copied when only `node_modules` is copied between Docker stages. **`PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true`** avoids downloading Chrome during `npm ci`. Puppeteer uses **`domcontentloaded`** so external fonts do not block forever.
 
 ### 5.2 Rider / contact identity (for PDF templates)
 
