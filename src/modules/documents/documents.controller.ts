@@ -3,58 +3,54 @@ import {
   Get,
   Post,
   Param,
+  Body,
   UseGuards,
   ParseUUIDPipe,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiBearerAuth,
+  ApiParam,
 } from '@nestjs/swagger';
-import { DocumentsService } from './documents.service';
+import { DocumentsService, slugToDocumentType } from './documents.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Documents')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
-@Controller('bookings/:bookingId/documents')
+@Controller(['bookings/:bookingId/documents', 'admin/bookings/:bookingId/documents'])
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 
-  @Post('passenger-manifest')
-  @ApiOperation({ summary: 'Generate passenger manifest PDF (كشف الركاب)' })
-  generateManifest(
-    @Param('bookingId', ParseUUIDPipe) bookingId: string,
-    @CurrentUser() user: any,
-  ) {
-    return this.documentsService.generate(bookingId, user.id, 'passenger_manifest');
-  }
-
-  @Post('contract')
-  @ApiOperation({ summary: 'Generate transport contract PDF (عقد النقل)' })
-  generateContract(
-    @Param('bookingId', ParseUUIDPipe) bookingId: string,
-    @CurrentUser() user: any,
-  ) {
-    return this.documentsService.generate(bookingId, user.id, 'contract');
-  }
-
-  @Post('payment-receipt')
-  @ApiOperation({ summary: 'Generate payment receipt PDF (إيصال الدفع)' })
-  generateReceipt(
-    @Param('bookingId', ParseUUIDPipe) bookingId: string,
-    @CurrentUser() user: any,
-  ) {
-    return this.documentsService.generate(bookingId, user.id, 'payment_receipt');
-  }
-
   @Get()
-  @ApiOperation({ summary: 'List all generated documents for a booking' })
+  @ApiOperation({ summary: 'List all generated PDF documents for a booking' })
   findAll(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
     @CurrentUser() user: any,
   ) {
     return this.documentsService.findByBooking(bookingId, user.id);
+  }
+
+  /** Accepts `{}` — matches transport-frontend admin document generation. */
+  @Post(':slug')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Generate or return a booking PDF document (manifest, contract, receipt)' })
+  @ApiParam({
+    name: 'slug',
+    enum: ['passenger-manifest', 'contract', 'payment-receipt'],
+    description: 'Document type slug (hyphen form in URL; stored type uses underscores)',
+  })
+  generateBySlug(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Param('slug') slug: string,
+    @CurrentUser() user: any,
+    @Body() _body?: Record<string, unknown>,
+  ) {
+    const docType = slugToDocumentType(slug);
+    return this.documentsService.generate(bookingId, user.id, docType);
   }
 }

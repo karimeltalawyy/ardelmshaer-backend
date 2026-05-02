@@ -3,6 +3,9 @@ import {
   NotFoundException,
   ForbiddenException,
   InternalServerErrorException,
+  BadRequestException,
+  ConflictException,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as puppeteer from 'puppeteer';
@@ -13,8 +16,20 @@ import { passengerManifestTemplate } from './templates/passenger-manifest.templa
 import { contractTemplate } from './templates/contract.template';
 import { paymentReceiptTemplate } from './templates/payment-receipt.template';
 
+export function slugToDocumentType(slug: string): 'passenger_manifest' | 'contract' | 'payment_receipt' {
+  const normalized = String(slug).trim().toLowerCase();
+  if (normalized === 'passenger-manifest') return 'passenger_manifest';
+  if (normalized === 'contract') return 'contract';
+  if (normalized === 'payment-receipt') return 'payment_receipt';
+  throw new BadRequestException(
+    `Unsupported document slug "${slug}". Use passenger-manifest, contract, or payment-receipt.`,
+  );
+}
+
 @Injectable()
 export class DocumentsService {
+  private readonly logger = new Logger(DocumentsService.name);
+
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
@@ -39,9 +54,6 @@ export class DocumentsService {
           },
         },
         passengers: true,
-        bookingSeats: {
-          include: { carSeat: { select: { seatCode: true } }, passenger: true },
-        },
         rider: { select: { id: true, fullName: true, phone: true, role: true } },
       },
     });
@@ -49,11 +61,19 @@ export class DocumentsService {
     if (!booking) throw new NotFoundException('Booking not found');
     await this.assertAccess(booking, userId);
 
-    // Check if already generated — return existing
-    const existing = await this.prisma.document.findFirst({
-      where: { bookingId, type: docType },
-    });
-    if (existing) return existing;
+    if (!booking.trip) {
+      throw new BadRequestException(
+        'Booking must have an assigned trip to generate documents for this booking',
+      );
+    }
+
+    await this.enforceGenerationPolicy(bookingId, booking.trip!, docType);
+
+    const existingReceipt =
+      docType === 'payment_receipt'
+        ? await this.prisma.document.findFirst({ where: { bookingId, type: docType } })
+        : null;
+    if (existingReceipt) return existingReceipt;
 
     const html = this.buildHtml(docType, booking);
     const fileUrl = await this.renderToPdf(html, bookingId, docType);
@@ -61,6 +81,45 @@ export class DocumentsService {
     return this.prisma.document.create({
       data: { bookingId, type: docType, fileUrl },
     });
+  }
+
+  private async enforceGenerationPolicy(
+    bookingId: string,
+    trip: { status: string },
+    docType: 'passenger_manifest' | 'contract' | 'payment_receipt',
+  ): Promise<void> {
+    if (docType === 'contract') {
+      const exists = await this.prisma.document.findFirst({
+        where: { bookingId, type: 'contract' },
+      });
+      if (exists) {
+        throw new ConflictException('Transport contract has already been issued for this booking');
+      }
+      return;
+    }
+
+    if (docType !== 'passenger_manifest') return;
+
+    const { status } = trip;
+    if (status === 'cancelled') {
+      throw new BadRequestException('Cannot generate passenger manifest when the trip is cancelled');
+    }
+
+    const manifestCount = await this.prisma.document.count({
+      where: { bookingId, type: 'passenger_manifest' },
+    });
+
+    if (status === 'completed' && manifestCount >= 2) {
+      throw new BadRequestException(
+        'Maximum of 2 passenger manifest generations allowed after the trip is completed',
+      );
+    }
+
+    if (status !== 'completed' && manifestCount >= 5) {
+      throw new BadRequestException(
+        'Maximum passenger manifest regenerations reached while the trip is not completed',
+      );
+    }
   }
 
   // ─── List documents for a booking ────────────────────────────────────────────
@@ -120,25 +179,31 @@ export class DocumentsService {
         phone: booking.trip.driver.user.phone ?? '',
       },
       car: booking.trip.car,
-      bookingMode: booking.bookingMode,
+    };
+
+    if (!booking.rider && !booking.riderName) {
+      throw new BadRequestException('Booking is missing rider details required for PDF generation');
+    }
+
+    const riderEffective = booking.rider ?? {
+      id: booking.id,
+      fullName: booking.riderName ?? '',
+      phone: booking.riderPhone ?? booking.contactPhone ?? '',
+      role: 'rider' as const,
     };
 
     const riderData = {
-      fullName: booking.rider.fullName,
-      phone: booking.rider.phone ?? '',
+      fullName: riderEffective.fullName,
+      phone: riderEffective.phone ?? '',
     };
 
     if (docType === 'passenger_manifest') {
-      const passengers = booking.passengers.map((p: any) => {
-        const seat = booking.bookingSeats.find((bs: any) => bs.passengerId === p.id);
-        return {
-          fullName: p.fullName,
-          nationality: p.nationality,
-          idNumber: p.idNumber,
-          phone: p.phone ?? '',
-          seatCode: seat?.carSeat?.seatCode,
-        };
-      });
+      const passengers = booking.passengers.map((p: any) => ({
+        fullName: p.fullName,
+        nationality: p.nationality,
+        idNumber: p.idNumber,
+        phone: p.phone ?? '',
+      }));
       return passengerManifestTemplate({
         bookingId: booking.id,
         issuedAt,
@@ -156,7 +221,7 @@ export class DocumentsService {
         rider: riderData,
         totalPrice: Number(booking.totalPrice).toFixed(2),
         paymentMethod: booking.paymentMethod,
-        seatCount: booking.seatCount,
+        passengerCount: booking.seatCount,
       });
     }
 
@@ -173,7 +238,7 @@ export class DocumentsService {
       totalPrice: Number(booking.totalPrice).toFixed(2),
       paymentMethod: booking.paymentMethod,
       paymentStatus: booking.paymentStatus,
-      seatCount: booking.seatCount,
+      passengerCount: booking.seatCount,
     });
   }
 
@@ -183,7 +248,8 @@ export class DocumentsService {
     const uploadsDir = path.join(process.cwd(), 'uploads', 'documents');
     if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-    const fileName = `${docType}-${bookingId}.pdf`;
+    const uniq = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 11)}`;
+    const fileName = `${docType}-${bookingId}-${uniq}.pdf`;
     const filePath = path.join(uploadsDir, fileName);
 
     let browser: puppeteer.Browser | undefined;
@@ -201,12 +267,19 @@ export class DocumentsService {
         margin: { top: '12mm', bottom: '12mm', left: '12mm', right: '12mm' },
       });
     } catch (err) {
-      throw new InternalServerErrorException(`PDF generation failed: ${err.message}`);
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `PDF render failed bookingId=${bookingId} docType=${docType} file=${fileName}: ${message}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      throw new InternalServerErrorException(`PDF generation failed: ${message}`);
     } finally {
       await browser?.close();
     }
 
+    const configured = this.config.get<string>('PUBLIC_API_URL')?.trim().replace(/\/$/, '');
     const port = this.config.get<number>('PORT', 3000);
-    return `http://localhost:${port}/uploads/documents/${fileName}`;
+    const base = configured && configured.length > 0 ? configured : `http://127.0.0.1:${port}`;
+    return `${base}/uploads/documents/${fileName}`;
   }
 }
