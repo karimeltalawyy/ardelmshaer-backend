@@ -63,9 +63,11 @@ export class DocumentsService {
 
     if (!booking.trip) {
       throw new BadRequestException(
-        'Booking must have an assigned trip to generate documents for this booking',
+        'This booking has no trip assigned (tripId is null). Link a trip to this booking in admin before generating PDFs. Other passengers on a trip do not auto-link this booking.',
       );
     }
+
+    this.assertTripDataCompleteForPdf(booking);
 
     await this.enforceGenerationPolicy(bookingId, booking.trip!, docType);
 
@@ -81,6 +83,24 @@ export class DocumentsService {
     return this.prisma.document.create({
       data: { bookingId, type: docType, fileUrl },
     });
+  }
+
+  /** Avoid 500s from null route/driver/car; message helps ops fix data. */
+  private assertTripDataCompleteForPdf(booking: any): void {
+    const t = booking.trip;
+    if (!t?.route?.origin || !t?.route?.destination) {
+      throw new BadRequestException(
+        'Trip route (origin/destination) is missing for this booking; cannot build PDF',
+      );
+    }
+    if (!t?.driver?.user) {
+      throw new BadRequestException(
+        'Trip driver or driver user record is missing; cannot build PDF',
+      );
+    }
+    if (!t?.car) {
+      throw new BadRequestException('Trip vehicle (car) is missing; cannot build PDF');
+    }
   }
 
   private async enforceGenerationPolicy(
@@ -157,6 +177,31 @@ export class DocumentsService {
     }
   }
 
+  /** Guest bookings may have no linked rider user — use booking fields + passengers. No signup required. */
+  private resolveRiderDataForPdf(booking: any): { fullName: string; phone: string } {
+    const p0 =
+      Array.isArray(booking.passengers) && booking.passengers.length > 0
+        ? booking.passengers[0]
+        : null;
+    const serialLabel =
+      typeof booking.bookingSerial === 'number' ? `حجز #${booking.bookingSerial}` : '—';
+
+    const fullName =
+      booking.rider?.fullName?.trim() ||
+      booking.riderName?.trim() ||
+      p0?.fullName?.trim() ||
+      serialLabel;
+
+    const phone =
+      booking.rider?.phone?.trim() ||
+      booking.riderPhone?.trim() ||
+      booking.contactPhone?.trim() ||
+      p0?.phone?.trim() ||
+      '';
+
+    return { fullName, phone };
+  }
+
   // ─── Build HTML ───────────────────────────────────────────────────────────────
 
   private buildHtml(docType: string, booking: any): string {
@@ -182,21 +227,7 @@ export class DocumentsService {
       bookingMode: String(booking.trip.bookingMode),
     };
 
-    if (!booking.rider && !booking.riderName) {
-      throw new BadRequestException('Booking is missing rider details required for PDF generation');
-    }
-
-    const riderEffective = booking.rider ?? {
-      id: booking.id,
-      fullName: booking.riderName ?? '',
-      phone: booking.riderPhone ?? booking.contactPhone ?? '',
-      role: 'rider' as const,
-    };
-
-    const riderData = {
-      fullName: riderEffective.fullName,
-      phone: riderEffective.phone ?? '',
-    };
+    const riderData = this.resolveRiderDataForPdf(booking);
 
     if (docType === 'passenger_manifest') {
       const passengers = booking.passengers.map((p: any) => ({
@@ -253,14 +284,21 @@ export class DocumentsService {
     const fileName = `${docType}-${bookingId}-${uniq}.pdf`;
     const filePath = path.join(uploadsDir, fileName);
 
+    const chromiumPath = this.config.get<string>('CHROMIUM_PATH') || process.env.CHROMIUM_PATH;
+
     let browser: puppeteer.Browser | undefined;
     try {
       browser = await puppeteer.launch({
         headless: true,
+        executablePath: chromiumPath?.trim() || undefined,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
       });
       const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'networkidle0' });
+      // Avoid networkidle0 — templates load Google Fonts and stall/hang in Docker or offline egress.
+      await page.setContent(html, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60_000,
+      });
       await page.pdf({
         path: filePath,
         format: 'A4',
