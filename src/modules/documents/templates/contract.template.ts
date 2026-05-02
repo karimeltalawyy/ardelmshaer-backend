@@ -12,13 +12,11 @@ export function contractTemplate(data: {
   rider: { fullName: string; phone: string };
   totalPrice: string;
   paymentMethod: string;
-  seatCount: number | null;
+  passengerCount: number | null;
 }): string {
   const today = data.issuedAt;
   const paymentLabel = data.paymentMethod === 'cash' ? 'نقدي' : data.paymentMethod === 'card' ? 'بطاقة بنكية' : 'محفظة إلكترونية';
-  const bookingLabel = data.trip.bookingMode === 'per_seat'
-    ? `حجز ${data.seatCount} مقعد`
-    : 'حجز المركبة بالكامل';
+  const bookingLabel = `حجز مركبة لعدد ${data.passengerCount ?? 0} ركاب`;
 
   return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -76,7 +74,7 @@ export function contractTemplate(data: {
     <div class="field"><label>نقطة الانطلاق</label><p>${data.trip.origin.nameAr}</p></div>
     <div class="field"><label>الوجهة</label><p>${data.trip.destination.nameAr}</p></div>
     <div class="field"><label>موعد الرحلة</label><p>${data.trip.departureAt}</p></div>
-    <div class="field"><label>نوع الحجز</label><p>${bookingLabel}</p></div>
+    <div class="field"><label>نوع الخدمة</label><p>${bookingLabel}</p></div>
     <div class="field"><label>المبلغ الإجمالي</label><p>${data.totalPrice} ريال</p></div>
     <div class="field"><label>طريقة الدفع</label><p>${paymentLabel}</p></div>
   </div>

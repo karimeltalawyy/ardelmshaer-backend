@@ -17,14 +17,12 @@ export function paymentReceiptTemplate(data: {
   totalPrice: string;
   paymentMethod: string;
   paymentStatus: string;
-  seatCount: number | null;
+  passengerCount: number | null;
 }): string {
   const paymentLabel = data.paymentMethod === 'cash' ? 'نقدي' : data.paymentMethod === 'card' ? 'بطاقة بنكية' : 'محفظة إلكترونية';
   const statusLabel = data.paymentStatus === 'paid' ? 'مدفوع' : data.paymentStatus === 'pending' ? 'قيد الانتظار' : 'مسترد';
   const statusColor = data.paymentStatus === 'paid' ? '#22c55e' : data.paymentStatus === 'pending' ? '#f59e0b' : '#3b82f6';
-  const bookingLabel = data.trip.bookingMode === 'per_seat'
-    ? `حجز ${data.seatCount} مقعد`
-    : 'حجز المركبة بالكامل';
+  const bookingLabel = `حجز مركبة لعدد ${data.passengerCount ?? 0} ركاب`;
 
   return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -80,7 +78,7 @@ export function paymentReceiptTemplate(data: {
     <div class="field"><label>من</label><p>${data.trip.origin.nameAr}</p></div>
     <div class="field"><label>إلى</label><p>${data.trip.destination.nameAr}</p></div>
     <div class="field"><label>موعد الانطلاق</label><p>${data.trip.departureAt}</p></div>
-    <div class="field"><label>نوع الحجز</label><p>${bookingLabel}</p></div>
+    <div class="field"><label>نوع الخدمة</label><p>${bookingLabel}</p></div>
     <div class="field"><label>السائق</label><p>${data.trip.driver.fullName}</p></div>
     <div class="field"><label>المركبة</label><p>${data.trip.car.brand} ${data.trip.car.model} — ${data.trip.car.plateNumber}</p></div>
   </div>

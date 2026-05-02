@@ -10,7 +10,7 @@ export function passengerManifestTemplate(data: {
     bookingMode: string;
   };
   rider: { fullName: string; phone: string };
-  passengers: Array<{ fullName: string; nationality: string; idNumber: string; phone: string; seatCode?: string }>;
+  passengers: Array<{ fullName: string; nationality: string; idNumber: string; phone: string }>;
 }): string {
   const rows = data.passengers
     .map(
@@ -21,7 +21,6 @@ export function passengerManifestTemplate(data: {
         <td>${p.nationality}</td>
         <td>${p.idNumber}</td>
         <td>${p.phone || '—'}</td>
-        <td>${p.seatCode ?? '—'}</td>
       </tr>`,
     )
     .join('');
@@ -67,7 +66,7 @@ export function passengerManifestTemplate(data: {
       <div class="field"><label>من</label><p>${data.trip.origin.nameAr}</p></div>
       <div class="field"><label>إلى</label><p>${data.trip.destination.nameAr}</p></div>
       <div class="field"><label>موعد الانطلاق</label><p>${data.trip.departureAt}</p></div>
-      <div class="field"><label>نوع الحجز</label><p><span class="badge">${data.trip.bookingMode === 'per_seat' ? 'حجز مقاعد' : 'حجز كامل'}</span></p></div>
+      <div class="field"><label>نوع الخدمة</label><p><span class="badge">حجز مركبة</span></p></div>
     </div>
   </div>
 
@@ -99,7 +98,6 @@ export function passengerManifestTemplate(data: {
           <th>الجنسية</th>
           <th>رقم الهوية</th>
           <th>رقم الجوال</th>
-          <th>رقم المقعد</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>

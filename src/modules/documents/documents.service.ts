@@ -179,6 +179,7 @@ export class DocumentsService {
         phone: booking.trip.driver.user.phone ?? '',
       },
       car: booking.trip.car,
+      bookingMode: String(booking.trip.bookingMode),
     };
 
     if (!booking.rider && !booking.riderName) {
