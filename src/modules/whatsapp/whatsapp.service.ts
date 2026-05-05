@@ -84,7 +84,10 @@ export class WhatsappService {
     passengerCount: number;
     passengers: Array<{ fullName: string; idNumber: string; nationality: string; phone: string }>;
   }): Promise<void> {
-    if (!this.adminNumber) return;
+    if (!this.adminNumber) {
+      this.logger.warn('notifyAdminBookingRequest skipped — ADMIN_WHATSAPP_NUMBER not set');
+      return;
+    }
 
     const carLabel = params.carTypePreference === 'starex' ? 'هيونداي ستاريكس' : 'هيونداي ستاريا';
     const dateStr = new Intl.DateTimeFormat('ar-SA', {
@@ -125,7 +128,10 @@ export class WhatsappService {
     passengerCount: number;
     pdfBuffer: Buffer;
   }): Promise<void> {
-    if (!this.adminNumber) return;
+    if (!this.adminNumber) {
+      this.logger.warn('notifyAdminWithManifest skipped — ADMIN_WHATSAPP_NUMBER not set');
+      return;
+    }
 
     const dateStr = new Intl.DateTimeFormat('ar-SA', {
       year: 'numeric', month: 'long', day: 'numeric',
