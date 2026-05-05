@@ -1,165 +1,72 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-
-interface SendTextPayload {
-  to: string;
-  body: string;
-}
-
-interface SendDocumentPayload {
-  to: string;
-  filename: string;
-  caption: string;
-  pdfBuffer: Buffer;
-}
+import twilio from 'twilio';
+import { v2 as cloudinary } from 'cloudinary';
 
 @Injectable()
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
-  private readonly apiUrl: string;
-  private readonly token: string;
+  private readonly client: ReturnType<typeof twilio> | null = null;
+  private readonly from: string;
   private readonly adminNumber: string;
-  private readonly phoneNumberId: string;
 
   constructor(private config: ConfigService) {
-    this.phoneNumberId = this.config.get<string>('WHATSAPP_PHONE_NUMBER_ID') ?? '';
-    this.apiUrl = `https://graph.facebook.com/v19.0/${this.phoneNumberId}/messages`;
-    this.token = this.config.get<string>('WHATSAPP_TOKEN') ?? '';
+    const accountSid = this.config.get<string>('TWILIO_ACCOUNT_SID') ?? '';
+    const authToken  = this.config.get<string>('TWILIO_AUTH_TOKEN') ?? '';
+    this.from        = `whatsapp:${this.config.get<string>('TWILIO_WHATSAPP_FROM') ?? ''}`;
     this.adminNumber = this.config.get<string>('ADMIN_WHATSAPP_NUMBER') ?? '';
+
+    if (accountSid && authToken) {
+      this.client = twilio(accountSid, authToken);
+    } else {
+      this.logger.warn('Twilio not configured — WhatsApp notifications disabled');
+    }
   }
 
-  async sendText(payload: SendTextPayload): Promise<void> {
-    if (!this.token || !this.phoneNumberId || !payload.to) {
-      this.logger.warn('WhatsApp not configured or recipient missing — skipping');
-      return;
-    }
-    if (!/^\+\d{7,15}$/.test(payload.to)) {
-      this.logger.warn(`WhatsApp: invalid recipient format, skipping`);
-      return;
-    }
+  private formatTo(phone: string): string {
+    const normalized = phone.startsWith('+') ? phone : `+${phone}`;
+    return `whatsapp:${normalized}`;
+  }
+
+  async sendText(to: string, body: string): Promise<void> {
+    if (!this.client) return;
     try {
-      const res = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: payload.to,
-          type: 'text',
-          text: { body: payload.body },
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        this.logger.error(`WhatsApp text send failed [${res.status}]: ${err.slice(0, 200)}`);
-      }
+      await this.client.messages.create({ from: this.from, to: this.formatTo(to), body });
     } catch (e) {
-      this.logger.error(`WhatsApp network error: ${e instanceof Error ? e.message : String(e)}`);
+      this.logger.error(`WhatsApp text failed: ${(e as Error).message}`);
     }
   }
 
-  async sendDocument(payload: SendDocumentPayload): Promise<void> {
-    if (!this.token || !this.phoneNumberId || !payload.to) {
-      this.logger.warn('WhatsApp not configured — skipping document send');
-      return;
-    }
+  async sendDocument(to: string, pdfBuffer: Buffer, filename: string, caption: string): Promise<void> {
+    if (!this.client) return;
     try {
-      // Step 1: Upload media to Meta
-      const formData = new FormData();
-      formData.append('messaging_product', 'whatsapp');
-      formData.append('file', new Blob([new Uint8Array(payload.pdfBuffer)], { type: 'application/pdf' }), payload.filename);
+      const mediaUrl = await this.uploadPdfToCloudinary(pdfBuffer, filename);
+      await this.client.messages.create({
+        from: this.from,
+        to: this.formatTo(to),
+        body: caption,
+        mediaUrl: [mediaUrl],
+      });
+    } catch (e) {
+      this.logger.error(`WhatsApp document failed: ${(e as Error).message}`);
+    }
+  }
 
-      const uploadRes = await fetch(
-        `https://graph.facebook.com/v19.0/${this.phoneNumberId}/media`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${this.token}` },
-          body: formData,
+  private uploadPdfToCloudinary(buffer: Buffer, filename: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const publicId = filename.replace(/\.pdf$/i, '');
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: 'whatsapp-docs', resource_type: 'raw', public_id: publicId, format: 'pdf' },
+        (error, result) => {
+          if (error || !result) return reject(error ?? new Error('Cloudinary upload failed'));
+          resolve(result.secure_url);
         },
       );
-
-      if (!uploadRes.ok) {
-        const err = await uploadRes.text();
-        this.logger.error(`WhatsApp media upload failed [${uploadRes.status}]: ${err.slice(0, 200)}`);
-        return;
-      }
-
-      const { id: mediaId } = (await uploadRes.json()) as { id: string };
-
-      // Step 2: Send document message
-      const res = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: payload.to,
-          type: 'document',
-          document: { id: mediaId, filename: payload.filename, caption: payload.caption },
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.text();
-        this.logger.error(`WhatsApp document send failed [${res.status}]: ${err.slice(0, 200)}`);
-      }
-    } catch (e) {
-      this.logger.error(`WhatsApp document send error: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-
-  async notifyAdmin(params: {
-    referenceNumber: string;
-    riderName: string;
-    riderPhone: string;
-    originNameAr: string;
-    destinationNameAr: string;
-    departureAt: Date;
-    passengerCount: number;
-    pdfBuffer: Buffer;
-  }): Promise<void> {
-    const dateStr = new Intl.DateTimeFormat('ar-SA', {
-      year: 'numeric', month: 'long', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-      timeZone: 'Asia/Riyadh',
-    }).format(params.departureAt);
-
-    const body = `🚗 *حجز جديد*\n\nرقم الحجز: *${params.referenceNumber}*\nالراكب: ${params.riderName}\nهاتف الراكب: ${params.riderPhone}\nالمسار: ${params.originNameAr} \u200E←\u200E ${params.destinationNameAr}\nتاريخ المغادرة: ${dateStr}\nعدد الركاب: ${params.passengerCount}\n\nيرجى مراجعة البيانات والتواصل مع الراكب.`;
-
-    await this.sendText({ to: this.adminNumber, body });
-    await this.sendDocument({
-      to: this.adminNumber,
-      filename: `booking-${params.referenceNumber}.pdf`,
-      caption: `قائمة ركاب — ${params.referenceNumber}`,
-      pdfBuffer: params.pdfBuffer,
+      stream.end(buffer);
     });
   }
 
-  async notifyRider(params: {
-    riderPhone: string;
-    riderName: string;
-    referenceNumber: string;
-    originNameAr: string;
-    destinationNameAr: string;
-    departureAt: Date;
-    pickupAddress: string;
-  }): Promise<void> {
-    const dateStr = new Intl.DateTimeFormat('ar-SA', {
-      year: 'numeric', month: 'long', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-      timeZone: 'Asia/Riyadh',
-    }).format(params.departureAt);
-
-    const body = `✅ *تم تأكيد حجزك!*\n\nأهلاً ${params.riderName}،\n\nرقم الحجز: *${params.referenceNumber}*\nالمسار: ${params.originNameAr} \u200E←\u200E ${params.destinationNameAr}\nموعد المغادرة: ${dateStr}\nعنوان الإقلاع: ${params.pickupAddress}\n\nشكراً لاختيارك مؤسسة أرض المشاعر للنقل البري 🙏`;
-
-    await this.sendText({ to: params.riderPhone, body });
-  }
+  // ─── Notification helpers ─────────────────────────────────────────────────────
 
   async notifyAdminBookingRequest(params: {
     referenceNumber: string;
@@ -171,6 +78,8 @@ export class WhatsappService {
     passengerCount: number;
     passengers: Array<{ fullName: string; idNumber: string; nationality: string; phone: string }>;
   }): Promise<void> {
+    if (!this.adminNumber) return;
+
     const carLabel = params.carTypePreference === 'starex' ? 'هيونداي ستاريكس' : 'هيونداي ستاريا';
     const dateStr = new Intl.DateTimeFormat('ar-SA', {
       year: 'numeric', month: 'long', day: 'numeric',
@@ -197,6 +106,108 @@ export class WhatsappService {
       'يرجى التواصل مع العميل لتأكيد الرحلة.',
     ].join('\n');
 
-    await this.sendText({ to: this.adminNumber, body });
+    await this.sendText(this.adminNumber, body);
+  }
+
+  async notifyAdminWithManifest(params: {
+    referenceNumber: string;
+    riderName: string;
+    riderPhone: string;
+    originNameAr: string;
+    destinationNameAr: string;
+    departureAt: Date;
+    passengerCount: number;
+    pdfBuffer: Buffer;
+  }): Promise<void> {
+    if (!this.adminNumber) return;
+
+    const dateStr = new Intl.DateTimeFormat('ar-SA', {
+      year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+      timeZone: 'Asia/Riyadh',
+    }).format(params.departureAt);
+
+    const body = [
+      '🚗 *حجز جديد*',
+      '',
+      `رقم الحجز: *${params.referenceNumber}*`,
+      `الراكب: ${params.riderName}`,
+      `هاتف الراكب: ${params.riderPhone}`,
+      `المسار: ${params.originNameAr} ← ${params.destinationNameAr}`,
+      `تاريخ المغادرة: ${dateStr}`,
+      `عدد الركاب: ${params.passengerCount}`,
+    ].join('\n');
+
+    await this.sendText(this.adminNumber, body);
+    await this.sendDocument(
+      this.adminNumber,
+      params.pdfBuffer,
+      `booking-${params.referenceNumber}.pdf`,
+      `كشف ركاب — ${params.referenceNumber}`,
+    );
+  }
+
+  async notifyDriverWithManifest(params: {
+    driverPhone: string;
+    referenceNumber: string;
+    originNameAr: string;
+    destinationNameAr: string;
+    departureAt: Date;
+    pdfBuffer: Buffer;
+  }): Promise<void> {
+    const dateStr = new Intl.DateTimeFormat('ar-SA', {
+      year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+      timeZone: 'Asia/Riyadh',
+    }).format(params.departureAt);
+
+    const body = [
+      '📋 *كشف ركاب*',
+      '',
+      `رقم الحجز: *${params.referenceNumber}*`,
+      `المسار: ${params.originNameAr} ← ${params.destinationNameAr}`,
+      `موعد الانطلاق: ${dateStr}`,
+      '',
+      'يرجى مراجعة قائمة الركاب المرفقة.',
+    ].join('\n');
+
+    await this.sendText(params.driverPhone, body);
+    await this.sendDocument(
+      params.driverPhone,
+      params.pdfBuffer,
+      `manifest-${params.referenceNumber}.pdf`,
+      `كشف ركاب — ${params.referenceNumber}`,
+    );
+  }
+
+  async notifyRider(params: {
+    riderPhone: string;
+    riderName: string;
+    referenceNumber: string;
+    originNameAr: string;
+    destinationNameAr: string;
+    departureAt: Date;
+    pickupAddress: string;
+  }): Promise<void> {
+    const dateStr = new Intl.DateTimeFormat('ar-SA', {
+      year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+      timeZone: 'Asia/Riyadh',
+    }).format(params.departureAt);
+
+    const body = [
+      '✅ *تم تأكيد حجزك!*',
+      '',
+      `أهلاً ${params.riderName}،`,
+      '',
+      `رقم الحجز: *${params.referenceNumber}*`,
+      `المسار: ${params.originNameAr} ← ${params.destinationNameAr}`,
+      `موعد المغادرة: ${dateStr}`,
+      `عنوان الإقلاع: ${params.pickupAddress}`,
+      '',
+      'شكراً لاختيارك مؤسسة أرض المشاعر للنقل البري 🙏',
+    ].join('\n');
+
+    await this.sendText(params.riderPhone, body);
   }
 }
