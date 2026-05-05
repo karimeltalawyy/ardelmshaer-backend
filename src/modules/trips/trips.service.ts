@@ -333,14 +333,34 @@ export class TripsService {
       throw new BadRequestException('Selected car does not have an approved driver assigned');
     }
 
-    const route = await this.prisma.route.findFirst({
-      where: { originId: dto.originId, destinationId: dto.destinationId, isActive: true },
-      include: {
-        origin: { select: { nameAr: true, nameEn: true } },
-        destination: { select: { nameAr: true, nameEn: true } },
+    // For admin manifests the price is set manually, so we don't need an active
+    // route with pricing. Try both directions; create a route on-the-fly if none exists.
+    const routeInclude = {
+      origin: { select: { nameAr: true, nameEn: true } },
+      destination: { select: { nameAr: true, nameEn: true } },
+    } as const;
+
+    let route = await this.prisma.route.findFirst({
+      where: {
+        OR: [
+          { originId: dto.originId, destinationId: dto.destinationId },
+          { originId: dto.destinationId, destinationId: dto.originId },
+        ],
       },
+      include: routeInclude,
     });
-    if (!route) throw new NotFoundException('No active route found between selected destinations');
+
+    if (!route) {
+      route = await this.prisma.route.create({
+        data: {
+          originId: dto.originId,
+          destinationId: dto.destinationId,
+          estimatedDurationMin: 0,
+          isActive: false,
+        },
+        include: routeInclude,
+      });
+    }
 
     const priceData = await calculatePrice(this.prisma, route.id, car.carType);
     const seasonId = priceData?.seasonId ?? null;
