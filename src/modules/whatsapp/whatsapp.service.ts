@@ -29,11 +29,17 @@ export class WhatsappService {
   }
 
   async sendText(to: string, body: string): Promise<void> {
-    if (!this.client) return;
+    if (!this.client) {
+      this.logger.warn('WhatsApp sendText skipped — client not initialized');
+      return;
+    }
+    const toFormatted = this.formatTo(to);
+    this.logger.log(`WhatsApp sending text → from=${this.from} to=${toFormatted}`);
     try {
-      await this.client.messages.create({ from: this.from, to: this.formatTo(to), body });
-    } catch (e) {
-      this.logger.error(`WhatsApp text failed: ${(e as Error).message}`);
+      const msg = await this.client.messages.create({ from: this.from, to: toFormatted, body });
+      this.logger.log(`WhatsApp text sent — SID=${msg.sid} status=${msg.status}`);
+    } catch (e: any) {
+      this.logger.error(`WhatsApp text failed: code=${e?.code} status=${e?.status} message=${e?.message}`);
     }
   }
 
