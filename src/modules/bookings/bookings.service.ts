@@ -386,14 +386,14 @@ export class BookingsService {
         },
       },
     });
-    if (!route) throw new BadRequestException('لا يوجد مسار بين هاتين الوجهتين');
 
-    const pricing = await this.prisma.routePricing.findFirst({
-      where: { routeId: route.id, carType: dto.carTypePreference, isActive: true },
-    });
-    if (!pricing) throw new BadRequestException('لم يتم تحديد سعر لهذا المسار');
+    const pricing = route
+      ? await this.prisma.routePricing.findFirst({
+          where: { routeId: route.id, carType: dto.carTypePreference, isActive: true },
+        })
+      : null;
 
-    const actualPrice = pricing.basePrice;
+    const actualPrice = pricing?.basePrice ?? 0;
 
     const booking = await this.prisma.booking.create({
       data: {
