@@ -26,21 +26,12 @@ export class CreateTripDto {
 
   @ApiPropertyOptional({
     description:
-      'Price per seat (per_seat cars). Omit to auto-calculate from route pricing + active season.',
+      'Vehicle trip price. Omit to auto-calculate from route pricing + active season.',
   })
   @IsOptional()
   @IsNumber()
   @IsPositive()
-  pricePerSeat?: number;
-
-  @ApiPropertyOptional({
-    description:
-      'Price for whole car (whole_car cars). Omit to auto-calculate from route pricing + active season.',
-  })
-  @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  priceWholeCar?: number;
+  price?: number;
 
   @ApiPropertyOptional({
     description: 'Allow rider to choose custom pickup time for this trip',

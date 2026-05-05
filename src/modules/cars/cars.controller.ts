@@ -19,7 +19,6 @@ import {
 import { CarsService } from './cars.service';
 import { CreateCarDto } from './dto/create-car.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
-import { CreateSeatsDto } from './dto/create-seats.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -61,7 +60,7 @@ export class CarsController {
   // ─── Car type configs (public to authenticated users) ─────────────────────────
 
   @Get('types')
-  @ApiOperation({ summary: 'Get all active car types with booking mode info' })
+  @ApiOperation({ summary: 'Get all active car types' })
   getCarTypes() {
     return this.carsService.getCarTypes();
   }
@@ -114,24 +113,6 @@ export class CarsController {
     @CurrentUser() user: any,
   ) {
     return this.carsService.deactivate(id, user.id);
-  }
-
-  @Post(':id/seats')
-  @ApiOperation({
-    summary: 'Set the seat layout for a per_seat car — replaces existing seats',
-  })
-  setSeats(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: any,
-    @Body() dto: CreateSeatsDto,
-  ) {
-    return this.carsService.setSeats(id, user.id, dto);
-  }
-
-  @Get(':id/seats')
-  @ApiOperation({ summary: 'Get seats for a car' })
-  getSeats(@Param('id', ParseUUIDPipe) id: string) {
-    return this.carsService.getSeats(id);
   }
 
   // ─── Admin endpoints ──────────────────────────────────────────────────────────

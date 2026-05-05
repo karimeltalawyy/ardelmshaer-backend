@@ -1,16 +1,15 @@
-import { BookingMode, CarType } from '@prisma/client';
+import { CarType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 type CarTypeSeed = {
-  bookingMode: BookingMode;
   defaultCapacity: number;
   labelAr: string;
   labelEn: string;
 };
 
 const DEFAULT_CAR_TYPE_CONFIGS: Partial<Record<CarType, CarTypeSeed>> = {
-  starex: { bookingMode: 'whole_car', defaultCapacity: 12, labelAr: 'هيونداي ستاريكس', labelEn: 'Hyundai Starex' },
-  staria: { bookingMode: 'whole_car', defaultCapacity: 11, labelAr: 'هيونداي ستاريا',  labelEn: 'Hyundai Staria' },
+  starex: { defaultCapacity: 12, labelAr: 'هيونداي ستاريكس', labelEn: 'Hyundai Starex' },
+  staria: { defaultCapacity: 11, labelAr: 'هيونداي ستاريا',  labelEn: 'Hyundai Staria' },
 };
 
 export async function ensureCarTypeConfig(
@@ -22,7 +21,6 @@ export async function ensureCarTypeConfig(
   return prisma.carTypeConfig.upsert({
     where: { carType },
     update: {
-      bookingMode: cfg.bookingMode,
       defaultCapacity: cfg.defaultCapacity,
       labelAr: cfg.labelAr,
       labelEn: cfg.labelEn,
@@ -30,7 +28,7 @@ export async function ensureCarTypeConfig(
     },
     create: {
       carType,
-      bookingMode: cfg.bookingMode,
+      bookingMode: 'whole_car',
       defaultCapacity: cfg.defaultCapacity,
       labelAr: cfg.labelAr,
       labelEn: cfg.labelEn,
@@ -48,4 +46,3 @@ export async function ensureAllCarTypeConfigs(prisma: PrismaService) {
 }
 
 export const SUPPORTED_CAR_TYPES: CarType[] = ['starex', 'staria'];
-

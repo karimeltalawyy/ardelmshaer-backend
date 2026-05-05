@@ -1,14 +1,13 @@
 import {
   IsEnum,
   IsInt,
-  IsOptional,
   IsString,
   IsUUID,
   Max,
   Min,
   MinLength,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { CarType } from '@prisma/client';
 
 export class CreateCarDto {
@@ -44,11 +43,4 @@ export class CreateCarDto {
   @Min(1)
   @Max(60)
   totalSeats: number;
-
-  @ApiPropertyOptional({
-    description: 'Visual seat map JSON for the frontend seat picker (per_seat cars only)',
-    example: { rows: 4, cols: 4, layout: [] },
-  })
-  @IsOptional()
-  seatLayoutJson?: Record<string, any>;
 }

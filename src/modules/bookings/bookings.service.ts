@@ -42,9 +42,6 @@ const BOOKING_INCLUDE = {
   origin: { select: { nameAr: true, nameEn: true } },
   destination: { select: { nameAr: true, nameEn: true } },
   passengers: true,
-  bookingSeats: {
-    include: { carSeat: { select: { seatCode: true, position: true } } },
-  },
   pickupBranch: { select: { id: true, nameAr: true, addressAr: true } },
 } as const;
 
@@ -195,7 +192,6 @@ export class BookingsService {
       throw new BadRequestException('انطلقت الرحلة بالفعل');
     }
 
-    const bookingMode = trip.bookingMode;
     const allowCustomPickupTime = !!trip.allowCustomPickupTime;
     const pickupMode = dto.pickupMode ?? 'branch';
 
@@ -264,55 +260,18 @@ export class BookingsService {
         (trip.pickupAddress || trip.route?.origin?.nameAr || trip.route?.origin?.nameEn || '').trim() || null;
     }
 
-    // ── per_seat validation ──────────────────────────────────────────────────
-    if (bookingMode === 'per_seat') {
-      if (!dto.seatIds || dto.seatIds.length === 0) {
-        throw new BadRequestException('Select at least one seat for per_seat trips');
-      }
-      if (dto.passengerCount !== dto.seatIds.length) {
-        throw new BadRequestException(
-          `Passenger count (${dto.passengerCount}) must match seat count (${dto.seatIds.length})`,
-        );
-      }
-      if (dto.seatIds.length !== dto.passengers.length) {
-        throw new BadRequestException(
-          `Seat count (${dto.seatIds.length}) must match passenger count (${dto.passengers.length})`,
-        );
-      }
-
-      // Validate all seatIds belong to this trip's car
-      const carSeatIds = trip.car.seats.map((s) => s.id);
-      const invalidSeats = dto.seatIds.filter((id) => !carSeatIds.includes(id));
-      if (invalidSeats.length > 0) {
-        throw new BadRequestException('One or more seat IDs do not belong to this trip\'s car');
-      }
-
-      if ((trip.availableSeats ?? 0) < dto.seatIds.length) {
-        throw new BadRequestException(
-          `Only ${trip.availableSeats} seat(s) available`,
-        );
-      }
-    } else {
-      if (dto.passengerCount !== dto.passengers.length) {
-        throw new BadRequestException(
-          `Passenger count (${dto.passengerCount}) must match passenger rows (${dto.passengers.length})`,
-        );
-      }
-      if (trip.totalSeats != null && dto.passengerCount > trip.totalSeats) {
-        throw new BadRequestException(
-          `Passenger count (${dto.passengerCount}) exceeds trip car capacity (${trip.totalSeats})`,
-        );
-      }
+    if (dto.passengerCount !== dto.passengers.length) {
+      throw new BadRequestException(
+        `Passenger count (${dto.passengerCount}) must match passenger rows (${dto.passengers.length})`,
+      );
+    }
+    if (trip.totalSeats != null && dto.passengerCount > trip.totalSeats) {
+      throw new BadRequestException(
+        `Passenger count (${dto.passengerCount}) exceeds trip car capacity (${trip.totalSeats})`,
+      );
     }
 
-    // ── Pricing ──────────────────────────────────────────────────────────────
-    const pricePerUnit =
-      bookingMode === 'per_seat'
-        ? Number(trip.pricePerSeat)
-        : Number(trip.priceWholeCar);
-
-    const seatCount = bookingMode === 'per_seat' ? dto.seatIds!.length : dto.passengerCount;
-    const basePrice = bookingMode === 'per_seat' ? pricePerUnit * seatCount! : pricePerUnit;
+    const basePrice = Number(trip.priceWholeCar);
     const seasonMultiplier = trip.season ? trip.season.priceMultiplier : 1;
 
     // Platform commission from config (default 10%)
@@ -327,35 +286,17 @@ export class BookingsService {
 
     // ── Transactional seat lock + booking creation ────────────────────────────
     return this.prisma.$transaction(async (tx) => {
-      // Conflict check for per_seat — inside transaction for atomicity
-      if (bookingMode === 'per_seat') {
-        const conflicting = await tx.bookingSeat.findFirst({
-          where: {
-            carSeatId: { in: dto.seatIds },
-            status: { not: 'cancelled' },
-            booking: { tripId: dto.tripId, status: { not: 'cancelled' } },
-          },
-        });
-
-        if (conflicting) {
-          throw new BadRequestException(
-            'One or more selected seats are already reserved. Please select different seats.',
-          );
-        }
-      } else {
-        // Whole-car trip can only have one active booking at a time.
-        const activeBooking = await tx.booking.findFirst({
-          where: {
-            tripId: dto.tripId,
-            status: { not: 'cancelled' },
-          },
-          select: { id: true },
-        });
-        if (activeBooking) {
-          throw new BadRequestException(
-            'This car has already been booked for the selected trip',
-          );
-        }
+      const activeBooking = await tx.booking.findFirst({
+        where: {
+          tripId: dto.tripId,
+          status: { not: 'cancelled' },
+        },
+        select: { id: true },
+      });
+      if (activeBooking) {
+        throw new BadRequestException(
+          'This car has already been booked for the selected trip',
+        );
       }
 
       // Create booking
@@ -363,8 +304,8 @@ export class BookingsService {
         data: {
           riderId,
           tripId: dto.tripId,
-          bookingMode,
-          seatCount,
+          bookingMode: 'whole_car',
+          seatCount: dto.passengerCount,
           basePrice,
           seasonMultiplier,
           platformFee,
@@ -395,28 +336,6 @@ export class BookingsService {
           }),
         ),
       );
-
-      // Create booking seats (per_seat only)
-      if (bookingMode === 'per_seat') {
-        await Promise.all(
-          dto.seatIds!.map((seatId, i) =>
-            tx.bookingSeat.create({
-              data: {
-                bookingId: booking.id,
-                carSeatId: seatId,
-                passengerId: passengers[i].id,
-                status: 'confirmed',
-              },
-            }),
-          ),
-        );
-
-        // Decrement available seats
-        await tx.trip.update({
-          where: { id: dto.tripId },
-          data: { availableSeats: { decrement: dto.seatIds!.length } },
-        });
-      }
 
       const created = await tx.booking.findUnique({
         where: { id: booking.id },
@@ -606,19 +525,10 @@ export class BookingsService {
         : booking.paymentStatus;
 
     return this.prisma.$transaction(async (tx) => {
-      // Cancel booking seats
       await tx.bookingSeat.updateMany({
         where: { bookingId },
         data: { status: 'cancelled' },
       });
-
-      // Restore available seats for per_seat trips
-      if (booking.bookingMode === 'per_seat' && booking.seatCount && booking.tripId) {
-        await tx.trip.update({
-          where: { id: booking.tripId },
-          data: { availableSeats: { increment: booking.seatCount } },
-        });
-      }
 
       const updated = await tx.booking.update({
         where: { id: bookingId },
@@ -685,9 +595,6 @@ export class BookingsService {
 
     if (booking.status === 'cancelled') {
       throw new BadRequestException('Cannot update passengers for cancelled booking');
-    }
-    if (booking.bookingMode !== 'whole_car') {
-      throw new BadRequestException('Passenger manifest updates are supported for whole-car bookings only');
     }
     if (booking.trip.totalSeats != null && dto.passengerCount > booking.trip.totalSeats) {
       throw new BadRequestException(

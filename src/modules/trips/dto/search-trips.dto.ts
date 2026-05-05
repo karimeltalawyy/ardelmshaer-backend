@@ -1,6 +1,6 @@
 import { IsDateString, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { BookingMode, CarType } from '@prisma/client';
+import { CarType } from '@prisma/client';
 
 export class SearchTripsDto {
   @ApiPropertyOptional()
@@ -22,11 +22,6 @@ export class SearchTripsDto {
   @IsOptional()
   @IsDateString()
   departureDate?: string;
-
-  @ApiPropertyOptional({ enum: BookingMode })
-  @IsOptional()
-  @IsEnum(BookingMode)
-  bookingMode?: BookingMode;
 
   @ApiPropertyOptional({ enum: CarType })
   @IsOptional()

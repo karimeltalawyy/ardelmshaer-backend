@@ -19,12 +19,5 @@ export class PublishTripStockDto {
   @IsOptional()
   @IsNumber()
   @IsPositive()
-  pricePerSeat?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  priceWholeCar?: number;
+  price?: number;
 }
-

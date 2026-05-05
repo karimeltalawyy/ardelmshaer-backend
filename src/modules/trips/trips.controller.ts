@@ -19,6 +19,7 @@ import {
 import { TripsService } from './trips.service';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { CreateDriverBookingDto } from './dto/create-driver-booking.dto';
+import { CreateAdminDriverBookingDto } from './dto/create-admin-driver-booking.dto';
 import { SearchTripsDto } from './dto/search-trips.dto';
 import { UpdateTripStatusDto } from './dto/update-trip-status.dto';
 import { TripStockQueryDto } from './dto/trip-stock-query.dto';
@@ -48,6 +49,14 @@ export class TripsController {
   @ApiOperation({ summary: 'Driver: create trip + booking with passengers in one step' })
   createDriverBooking(@CurrentUser() user: any, @Body() dto: CreateDriverBookingDto) {
     return this.tripsService.createDriverBooking(user.id, dto);
+  }
+
+  @Post('admin-driver-booking')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: '[Admin] Create trip + booking manifest and assign it by selected car' })
+  createAdminDriverBooking(@CurrentUser() user: any, @Body() dto: CreateAdminDriverBookingDto) {
+    return this.tripsService.createAdminDriverBooking(user.id, dto);
   }
 
   @Get('my')

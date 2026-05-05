@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { CreateDriverBookingDto } from './dto/create-driver-booking.dto';
+import { CreateAdminDriverBookingDto } from './dto/create-admin-driver-booking.dto';
 import { SearchTripsDto } from './dto/search-trips.dto';
 import { UpdateTripStatusDto } from './dto/update-trip-status.dto';
 import { TripStockQueryDto } from './dto/trip-stock-query.dto';
@@ -35,6 +36,21 @@ const TRIP_INCLUDE = {
 @Injectable()
 export class TripsService {
   constructor(private prisma: PrismaService) {}
+
+  private presentTrip<T extends Record<string, any>>(trip: T) {
+    const {
+      bookingMode: _bookingMode,
+      pricePerSeat: _pricePerSeat,
+      priceWholeCar,
+      availableSeats: _availableSeats,
+      ...rest
+    } = trip;
+
+    return {
+      ...rest,
+      price: priceWholeCar != null ? Number(priceWholeCar) : null,
+    };
+  }
 
   private buildSaudiDayRange(departureDate: string): { gte: Date; lt: Date } {
     if (!departureDate.includes('T')) {
@@ -91,41 +107,19 @@ export class TripsService {
     });
     if (!route || !route.isActive) throw new NotFoundException('Route not found or inactive');
 
-    // Get car type config to determine booking mode
-    const carTypeConfig = await ensureCarTypeConfig(this.prisma, car.carType);
-
-    const bookingMode = carTypeConfig.bookingMode;
-
-    // Validate per_seat car has seats defined
-    if (bookingMode === 'per_seat' && car.seats.length === 0) {
-      throw new BadRequestException(
-        'Set up the seat layout for this car before creating per_seat trips',
-      );
-    }
+    await ensureCarTypeConfig(this.prisma, car.carType);
 
     // Calculate price from route pricing + active season
     const priceData = await calculatePrice(this.prisma, dto.routeId, car.carType);
 
-    let pricePerSeat: number | null = null;
-    let priceWholeCar: number | null = null;
-
-    if (bookingMode === 'per_seat') {
-      pricePerSeat = dto.pricePerSeat ?? priceData?.finalPrice ?? null;
-      if (!pricePerSeat) {
-        throw new BadRequestException(
-          'No pricing found for this route + car type. Set pricing first or provide pricePerSeat manually.',
-        );
-      }
-    } else {
-      priceWholeCar = dto.priceWholeCar ?? priceData?.finalPrice ?? null;
-      if (!priceWholeCar) {
-        throw new BadRequestException(
-          'No pricing found for this route + car type. Set pricing first or provide priceWholeCar manually.',
-        );
-      }
+    const price = dto.price ?? priceData?.finalPrice ?? null;
+    if (!price) {
+      throw new BadRequestException(
+        'No pricing found for this route + car type. Set pricing first or provide price manually.',
+      );
     }
 
-    const allowCustomPickupTime = dto.allowCustomPickupTime ?? (bookingMode === 'whole_car');
+    const allowCustomPickupTime = dto.allowCustomPickupTime ?? false;
     const allowRiderCancellation = dto.allowRiderCancellation ?? true;
     const cancellationCutoffHours =
       allowRiderCancellation ? (dto.cancellationCutoffHours ?? null) : null;
@@ -145,7 +139,7 @@ export class TripsService {
 
     const pickupAddress = (dto.pickupAddress || route.origin?.nameAr || route.origin?.nameEn || '').trim() || null;
 
-    return this.prisma.trip.create({
+    const trip = await this.prisma.trip.create({
       data: {
         driverId: car.driver.id,
         carId: dto.carId,
@@ -153,11 +147,10 @@ export class TripsService {
         seasonId: priceData?.seasonId ?? null,
         createdBy: userId,
         departureAt: new Date(dto.departureAt),
-        bookingMode,
-        pricePerSeat: pricePerSeat ? pricePerSeat : undefined,
-        priceWholeCar: priceWholeCar ? priceWholeCar : undefined,
-        totalSeats: bookingMode === 'per_seat' ? car.totalSeats : null,
-        availableSeats: bookingMode === 'per_seat' ? car.totalSeats : null,
+        bookingMode: 'whole_car',
+        priceWholeCar: price,
+        totalSeats: car.totalSeats,
+        availableSeats: car.totalSeats,
         allowCustomPickupTime,
         allowRiderCancellation,
         cancellationPolicyId,
@@ -167,6 +160,8 @@ export class TripsService {
       },
       include: TRIP_INCLUDE,
     });
+
+    return this.presentTrip(trip);
   }
 
   // ─── Search trips (public) ────────────────────────────────────────────────────
@@ -180,17 +175,9 @@ export class TripsService {
           status: 'scheduled',
         },
         {
-          OR: [
-            // Per-seat trips must have available seats
-            { bookingMode: 'per_seat', availableSeats: { gt: 0 } },
-            // Whole-car trips must not have any active booking yet
-            {
-              bookingMode: 'whole_car',
-              bookings: {
-                none: { status: { not: 'cancelled' } },
-              },
-            },
-          ],
+          bookings: {
+            none: { status: { not: 'cancelled' } },
+          },
         },
       ],
     };
@@ -203,8 +190,6 @@ export class TripsService {
       if (dto.destinationId) where.route.destinationId = dto.destinationId;
     }
 
-    if (dto.bookingMode) where.bookingMode = dto.bookingMode;
-
     if (dto.carType) {
       where.car = { carType: dto.carType };
     }
@@ -216,11 +201,13 @@ export class TripsService {
       where.AND.push({ departureAt: { gte: new Date() } });
     }
 
-    return this.prisma.trip.findMany({
+    const trips = await this.prisma.trip.findMany({
       where,
       include: TRIP_INCLUDE,
       orderBy: { departureAt: 'asc' },
     });
+
+    return trips.map((trip) => this.presentTrip(trip));
   }
 
   // ─── Get one ──────────────────────────────────────────────────────────────────
@@ -230,28 +217,18 @@ export class TripsService {
       where: { id: tripId },
       include: {
         ...TRIP_INCLUDE,
-        car: {
-          include: {
-            seats: { orderBy: { seatCode: 'asc' } },
-          },
-        },
+        car: true,
         bookings: {
           where: { status: { not: 'cancelled' } },
           include: {
             passengers: true,
-            bookingSeats: {
-              include: {
-                carSeat: { select: { seatCode: true } },
-                passenger: { select: { fullName: true, nationality: true, idNumber: true } },
-              },
-            },
           },
         },
       },
     });
 
     if (!trip) throw new NotFoundException('Trip not found');
-    return trip;
+    return this.presentTrip(trip);
   }
 
   // ─── Driver's trips ───────────────────────────────────────────────────────────
@@ -335,28 +312,133 @@ export class TripsService {
       },
     });
 
-    return { trip, booking };
+    return { trip: this.presentTrip(trip), booking };
+  }
+
+  async createAdminDriverBooking(userId: string, dto: CreateAdminDriverBookingDto) {
+    const car = await this.prisma.car.findUnique({
+      where: { id: dto.carId },
+      include: {
+        driver: {
+          include: {
+            user: { select: { id: true, fullName: true, phone: true } },
+          },
+        },
+      },
+    });
+
+    if (!car) throw new NotFoundException('Car not found');
+    if (car.status !== 'active') throw new BadRequestException('Selected car is not active');
+    if (!car.driver || car.driver.approvalStatus !== 'approved') {
+      throw new BadRequestException('Selected car does not have an approved driver assigned');
+    }
+
+    const route = await this.prisma.route.findFirst({
+      where: { originId: dto.originId, destinationId: dto.destinationId, isActive: true },
+      include: {
+        origin: { select: { nameAr: true, nameEn: true } },
+        destination: { select: { nameAr: true, nameEn: true } },
+      },
+    });
+    if (!route) throw new NotFoundException('No active route found between selected destinations');
+
+    const priceData = await calculatePrice(this.prisma, route.id, car.carType);
+    const seasonId = priceData?.seasonId ?? null;
+    const tripPrice = Number(dto.price);
+
+    const trip = await this.prisma.trip.create({
+      data: {
+        driverId: car.driver.id,
+        carId: car.id,
+        routeId: route.id,
+        seasonId,
+        departureAt: new Date(dto.departureAt),
+        bookingMode: 'whole_car',
+        priceWholeCar: tripPrice,
+        totalSeats: car.totalSeats,
+        availableSeats: car.totalSeats,
+        status: 'scheduled',
+        allowCustomPickupTime: false,
+        allowRiderCancellation: false,
+        pickupAddress: (route.origin.nameAr || route.origin.nameEn || '').trim() || null,
+        createdBy: userId,
+      },
+      include: TRIP_INCLUDE,
+    });
+
+    const booking = await this.prisma.booking.create({
+      data: {
+        riderId: userId,
+        riderName: car.driver.user.fullName,
+        riderPhone: dto.contactPhone,
+        tripId: trip.id,
+        seatCount: dto.passengerCount,
+        contactPhone: dto.contactPhone,
+        paymentMethod: (dto.paymentMethod ?? 'cash') as any,
+        paymentStatus: 'pending',
+        status: 'confirmed',
+        bookingMode: 'whole_car',
+        basePrice: tripPrice,
+        seasonMultiplier: 1.0,
+        totalPrice: tripPrice,
+        platformFee: 0,
+        driverPayout: tripPrice,
+        originId: dto.originId,
+        destinationId: dto.destinationId,
+        requestedDate: new Date(dto.departureAt),
+        carTypePreference: car.carType,
+        passengers: {
+          create: dto.passengers.map((p) => ({
+            fullName: p.fullName,
+            nationality: p.nationality,
+            idNumber: p.idNumber ?? '',
+            phone: p.phone ?? '',
+          })),
+        },
+      },
+      include: {
+        passengers: true,
+        trip: {
+          include: {
+            route: {
+              include: {
+                origin: { select: { nameAr: true } },
+                destination: { select: { nameAr: true } },
+              },
+            },
+            car: { select: { brand: true, model: true, plateNumber: true, carType: true } },
+            driver: { include: { user: { select: { fullName: true, phone: true } } } },
+          },
+        },
+      },
+    });
+
+    return { trip: this.presentTrip(trip), booking };
   }
 
   async findMyTrips(userId: string) {
     const driver = await this.prisma.driverProfile.findUnique({ where: { userId } });
     if (!driver) return [];
 
-    return this.prisma.trip.findMany({
+    const trips = await this.prisma.trip.findMany({
       where: { driverId: driver.id },
       include: TRIP_INCLUDE,
       orderBy: { departureAt: 'desc' },
     });
+
+    return trips.map((trip) => this.presentTrip(trip));
   }
 
   // ─── Admin: all trips ─────────────────────────────────────────────────────────
 
   async findAll(status?: string) {
-    return this.prisma.trip.findMany({
+    const trips = await this.prisma.trip.findMany({
       where: status ? { status: status as any } : undefined,
       include: TRIP_INCLUDE,
       orderBy: { departureAt: 'desc' },
     });
+
+    return trips.map((trip) => this.presentTrip(trip));
   }
 
   async getDailyStock(dto: TripStockQueryDto) {
@@ -381,7 +463,6 @@ export class TripsService {
       },
       include: {
         driver: { include: { user: { select: { fullName: true, phone: true } } } },
-        seats: { select: { id: true } },
       },
       orderBy: { plateNumber: 'asc' },
     });
@@ -440,7 +521,7 @@ export class TripsService {
         brand: car.brand,
         model: car.model,
         totalSeats: car.totalSeats,
-        hasSeatMap: car.seats.length > 0,
+        hasSeatMap: false,
         driver: {
           id: car.driver.id,
           fullName: car.driver.user.fullName,
@@ -501,7 +582,6 @@ export class TripsService {
         where: { id: carId },
         include: {
           driver: true,
-          seats: { select: { id: true } },
         },
       });
 
@@ -540,8 +620,7 @@ export class TripsService {
           carId,
           routeId: dto.routeId,
           departureAt: dto.departureAt,
-          pricePerSeat: dto.pricePerSeat,
-          priceWholeCar: dto.priceWholeCar,
+          price: dto.price,
           allowCustomPickupTime: false,
         });
         created.push(trip);
@@ -594,11 +673,13 @@ export class TripsService {
       );
     }
 
-    return this.prisma.trip.update({
+    const updatedTrip = await this.prisma.trip.update({
       where: { id: tripId },
       data: { status: dto.status },
       include: TRIP_INCLUDE,
     });
+
+    return this.presentTrip(updatedTrip);
   }
 
   // ─── Cancel trip (convenience) ────────────────────────────────────────────────

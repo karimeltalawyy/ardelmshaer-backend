@@ -8,7 +8,6 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCarDto } from './dto/create-car.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
-import { CreateSeatsDto } from './dto/create-seats.dto';
 import { ensureAllCarTypeConfigs } from '../../common/utils/car-type-config.util';
 import { CarType } from '@prisma/client';
 import { CAR_CATALOG } from './car-catalog.data';
@@ -76,7 +75,6 @@ export class CarsService {
         model: dto.model,
         year: dto.year,
         totalSeats: dto.totalSeats,
-        seatLayoutJson: dto.seatLayoutJson ?? undefined,
         status: 'active',
       },
       include: { seats: true },
@@ -174,62 +172,6 @@ export class CarsService {
     const car = await this.prisma.car.findUnique({ where: { id: carId } });
     if (!car) throw new NotFoundException('Car not found');
     return this.prisma.car.delete({ where: { id: carId } });
-  }
-
-  // ─── Seats ────────────────────────────────────────────────────────────────────
-
-  async setSeats(carId: string, userId: string, dto: CreateSeatsDto) {
-    const car = await this.assertCarManager(carId, userId);
-
-    const carTypeConfig = await this.prisma.carTypeConfig.findUnique({
-      where: { carType: car.carType },
-    });
-
-    if (carTypeConfig?.bookingMode !== 'per_seat') {
-      throw new BadRequestException(
-        'Seat layouts are only for per_seat cars (minibus, bus)',
-      );
-    }
-
-    if (dto.seats.length !== car.totalSeats) {
-      throw new BadRequestException(
-        `Seat count (${dto.seats.length}) must match car's total seats (${car.totalSeats})`,
-      );
-    }
-
-    // Validate unique seat codes
-    const codes = dto.seats.map((s) => s.seatCode);
-    if (new Set(codes).size !== codes.length) {
-      throw new BadRequestException('Seat codes must be unique within a car');
-    }
-
-    // Replace all seats in a transaction
-    await this.prisma.$transaction([
-      this.prisma.carSeat.deleteMany({ where: { carId } }),
-      this.prisma.carSeat.createMany({
-        data: dto.seats.map((s) => ({
-          carId,
-          seatCode: s.seatCode,
-          position: s.position,
-          isExtraLegroom: s.isExtraLegroom ?? false,
-        })),
-      }),
-    ]);
-
-    return this.prisma.carSeat.findMany({
-      where: { carId },
-      orderBy: { seatCode: 'asc' },
-    });
-  }
-
-  async getSeats(carId: string) {
-    const car = await this.prisma.car.findUnique({ where: { id: carId } });
-    if (!car) throw new NotFoundException('Car not found');
-
-    return this.prisma.carSeat.findMany({
-      where: { carId },
-      orderBy: { seatCode: 'asc' },
-    });
   }
 
   // ─── Public: available car counts ────────────────────────────────────────────

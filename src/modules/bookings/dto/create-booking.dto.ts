@@ -32,15 +32,6 @@ export class CreateBookingDto {
   @MinLength(7)
   contactPhone: string;
 
-  @ApiPropertyOptional({
-    type: [String],
-    description: 'CAR_SEAT IDs to reserve — required for per_seat trips. One seat per passenger.',
-  })
-  @IsOptional()
-  @IsArray()
-  @IsUUID('all', { each: true })
-  seatIds?: string[];
-
   @ApiProperty({ type: [PassengerDto], description: 'Passenger details required for the manifest' })
   @IsArray()
   @ArrayMinSize(1)
