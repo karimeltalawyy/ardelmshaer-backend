@@ -235,10 +235,9 @@ export class CarsService {
         },
       },
     });
-    if (!route) throw new NotFoundException('No route found for these destinations');
 
     const priceMap: Record<string, number | null> = { starex: null, staria: null };
-    for (const p of route.pricings) {
+    for (const p of route?.pricings ?? []) {
       priceMap[p.carType] = Number(p.basePrice);
     }
 
