@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import twilio from 'twilio';
+import { Twilio } from 'twilio';
 import { v2 as cloudinary } from 'cloudinary';
 
 @Injectable()
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
-  private readonly client: ReturnType<typeof twilio> | null = null;
+  private readonly client: Twilio | null = null;
   private readonly from: string;
   private readonly adminNumber: string;
 
@@ -17,7 +17,7 @@ export class WhatsappService {
     this.adminNumber = this.config.get<string>('ADMIN_WHATSAPP_NUMBER') ?? '';
 
     if (accountSid && authToken) {
-      this.client = twilio(accountSid, authToken);
+      this.client = new Twilio(accountSid, authToken);
     } else {
       this.logger.warn('Twilio not configured — WhatsApp notifications disabled');
     }
