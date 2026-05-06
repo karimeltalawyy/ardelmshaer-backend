@@ -377,9 +377,8 @@ export class DocumentsService {
       await browser?.close();
     }
 
-    const configured = this.config.get<string>('PUBLIC_API_URL')?.trim().replace(/\/$/, '');
-    const port = this.config.get<number>('PORT', 3000);
-    const base = configured && configured.length > 0 ? configured : `http://127.0.0.1:${port}`;
-    return `${base}/uploads/documents/${fileName}`;
+    // Return a root-relative path so the stored URL is deployment-agnostic.
+    // The frontend resolves it against the API origin via resolveAbsoluteAssetUrl().
+    return `/uploads/documents/${fileName}`;
   }
 }
