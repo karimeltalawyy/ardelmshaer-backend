@@ -16,6 +16,31 @@ import { createHmac } from 'crypto';
 import { SkipThrottle } from '@nestjs/throttler';
 import { ApiExcludeController } from '@nestjs/swagger';
 
+interface MetaContact {
+  profile?: { name?: string };
+  wa_id?: string;
+}
+
+interface MetaMessage {
+  from?: string;
+  id?: string;
+  timestamp?: string;
+  type?: string;
+  text?: { body?: string };
+  image?: { id?: string; mime_type?: string; sha256?: string };
+  document?: { id?: string; filename?: string; mime_type?: string };
+  audio?: { id?: string; mime_type?: string };
+  interactive?: { type?: string; button_reply?: { id?: string; title?: string } };
+  location?: { latitude?: number; longitude?: number; name?: string; address?: string };
+}
+
+interface MetaStatus {
+  id?: string;
+  status?: string;
+  timestamp?: string;
+  recipient_id?: string;
+}
+
 interface MetaWebhookPayload {
   object?: string;
   entry?: Array<{
@@ -24,25 +49,9 @@ interface MetaWebhookPayload {
       value?: {
         messaging_product?: string;
         metadata?: { display_phone_number?: string; phone_number_id?: string };
-        contacts?: Array<{ profile?: { name?: string }; wa_id?: string }>;
-        messages?: Array<{
-          from?: string;
-          id?: string;
-          timestamp?: string;
-          type?: string;
-          text?: { body?: string };
-          image?: { id?: string; mime_type?: string; sha256?: string };
-          document?: { id?: string; filename?: string; mime_type?: string };
-          audio?: { id?: string; mime_type?: string };
-          interactive?: { type?: string; button_reply?: { id?: string; title?: string } };
-          location?: { latitude?: number; longitude?: number; name?: string; address?: string };
-        }>;
-        statuses?: Array<{
-          id?: string;
-          status?: string;
-          timestamp?: string;
-          recipient_id?: string;
-        }>;
+        contacts?: MetaContact[];
+        messages?: MetaMessage[];
+        statuses?: MetaStatus[];
       };
       field?: string;
     }>;
@@ -134,8 +143,8 @@ export class WhatsappWebhookController {
   }
 
   private processMessages(
-    messages: NonNullable<MetaWebhookPayload['entry']>[0]['changes'][0]['value']['messages'],
-    contacts: NonNullable<MetaWebhookPayload['entry']>[0]['changes'][0]['value']['contacts'],
+    messages: MetaMessage[],
+    contacts: MetaContact[],
   ): void {
     for (const msg of messages) {
       const from = msg.from ?? 'unknown';
@@ -180,7 +189,7 @@ export class WhatsappWebhookController {
   }
 
   private processStatuses(
-    statuses: NonNullable<MetaWebhookPayload['entry']>[0]['changes'][0]['value']['statuses'],
+    statuses: MetaStatus[],
   ): void {
     for (const status of statuses) {
       this.logger.log(
