@@ -12,6 +12,7 @@ import * as puppeteer from 'puppeteer';
 import * as path from 'path';
 import * as fs from 'fs';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { passengerManifestTemplate } from './templates/passenger-manifest.template';
 import { contractTemplate } from './templates/contract.template';
 import { paymentReceiptTemplate } from './templates/payment-receipt.template';
@@ -33,6 +34,7 @@ export class DocumentsService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private whatsapp: WhatsappService,
   ) {}
 
   // ─── Generate & store document ────────────────────────────────────────────────
@@ -80,8 +82,67 @@ export class DocumentsService {
     const html = this.buildHtml(docType, booking);
     const fileUrl = await this.renderToPdf(html, bookingId, docType);
 
-    return this.prisma.document.create({
+    const document = await this.prisma.document.create({
       data: { bookingId, type: docType, fileUrl },
+    });
+
+    if (docType === 'passenger_manifest') {
+      this.dispatchManifestNotifications(booking, fileUrl).catch(() => {});
+    }
+
+    return document;
+  }
+
+  private async dispatchManifestNotifications(booking: any, fileUrl: string): Promise<void> {
+    const reference = booking.bookingSerial
+      ? `AMS-${String(booking.bookingSerial).padStart(6, '0')}`
+      : booking.id;
+
+    const origin = booking.trip.route.origin.nameAr;
+    const destination = booking.trip.route.destination.nameAr;
+    const departureAt = new Date(booking.trip.departureAt);
+    const passengerCount: number = Array.isArray(booking.passengers)
+      ? booking.passengers.length
+      : booking.seatCount ?? 0;
+
+    // Read PDF from disk so we can attach it
+    let pdfBuffer: Buffer;
+    try {
+      const filePath = fileUrl.replace(/^https?:\/\/[^/]+\/uploads\/documents\//, '');
+      const absolutePath = require('path').join(process.cwd(), 'uploads', 'documents', filePath.split('/').pop()!);
+      pdfBuffer = require('fs').readFileSync(absolutePath);
+    } catch (e) {
+      this.logger.warn(`dispatchManifestNotifications: could not read PDF file — ${(e as Error).message}`);
+      return;
+    }
+
+    const riderData = this.resolveRiderDataForPdf(booking);
+    const driverPhone: string = booking.trip?.driver?.user?.phone ?? '';
+
+    // Notify driver
+    if (driverPhone) {
+      await this.whatsapp.notifyDriverWithManifest({
+        driverPhone,
+        referenceNumber: reference,
+        originNameAr: origin,
+        destinationNameAr: destination,
+        departureAt,
+        pdfBuffer,
+      });
+    } else {
+      this.logger.warn(`dispatchManifestNotifications: driver phone missing for booking ${reference}`);
+    }
+
+    // Notify admin
+    await this.whatsapp.notifyAdminWithManifest({
+      referenceNumber: reference,
+      riderName: riderData.fullName,
+      riderPhone: riderData.phone,
+      originNameAr: origin,
+      destinationNameAr: destination,
+      departureAt,
+      passengerCount,
+      pdfBuffer,
     });
   }
 
