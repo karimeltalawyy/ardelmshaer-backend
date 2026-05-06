@@ -3,58 +3,171 @@ import { ConfigService } from '@nestjs/config';
 import { Twilio } from 'twilio';
 import { v2 as cloudinary } from 'cloudinary';
 
+type WhatsappProvider = 'meta' | 'twilio';
+
 @Injectable()
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
+  private readonly provider: WhatsappProvider;
+
   private readonly client: Twilio | null = null;
   private readonly from: string;
   private readonly adminNumber: string;
+  private readonly metaToken: string;
+  private readonly metaPhoneNumberId: string;
+  private readonly metaApiVersion: string;
 
   constructor(private config: ConfigService) {
-    const accountSid = this.config.get<string>('TWILIO_ACCOUNT_SID') ?? '';
-    const authToken  = this.config.get<string>('TWILIO_AUTH_TOKEN') ?? '';
-    this.from        = `whatsapp:${this.config.get<string>('TWILIO_WHATSAPP_FROM') ?? ''}`;
+    this.provider = (this.config.get<string>('WHATSAPP_PROVIDER') ?? 'meta') as WhatsappProvider;
     this.adminNumber = this.config.get<string>('ADMIN_WHATSAPP_NUMBER') ?? '';
+
+    this.metaToken = this.config.get<string>('META_WHATSAPP_ACCESS_TOKEN') ?? '';
+    this.metaPhoneNumberId = this.config.get<string>('META_WHATSAPP_PHONE_NUMBER_ID') ?? '';
+    this.metaApiVersion = this.config.get<string>('META_WHATSAPP_API_VERSION') ?? 'v22.0';
+
+    const accountSid = this.config.get<string>('TWILIO_ACCOUNT_SID') ?? '';
+    const authToken = this.config.get<string>('TWILIO_AUTH_TOKEN') ?? '';
+    this.from = `whatsapp:${this.config.get<string>('TWILIO_WHATSAPP_FROM') ?? ''}`;
 
     if (accountSid && authToken) {
       this.client = new Twilio(accountSid, authToken);
-    } else {
-      this.logger.warn('Twilio not configured — WhatsApp notifications disabled');
     }
+
+    if (this.provider === 'meta') {
+      if (!this.metaToken || !this.metaPhoneNumberId) {
+        this.logger.warn('Meta WhatsApp selected but not fully configured — notifications disabled');
+      } else {
+        this.logger.log('WhatsApp provider set to Meta Cloud API');
+      }
+      return;
+    }
+
+    if (this.provider === 'twilio') {
+      if (!this.client || !this.from || this.from === 'whatsapp:') {
+        this.logger.warn('Twilio WhatsApp selected but not fully configured — notifications disabled');
+      } else {
+        this.logger.log('WhatsApp provider set to Twilio');
+      }
+      return;
+    }
+
+    this.logger.warn(
+      `Unknown WHATSAPP_PROVIDER="${this.provider}" — expected "meta" or "twilio". Notifications disabled`,
+    );
   }
 
-  private formatTo(phone: string): string {
+  private formatTwilioTo(phone: string): string {
     const normalized = phone.startsWith('+') ? phone : `+${phone}`;
     return `whatsapp:${normalized}`;
   }
 
-  async sendText(to: string, body: string): Promise<void> {
-    if (!this.client) {
-      this.logger.warn('WhatsApp sendText skipped — client not initialized');
+  private formatMetaTo(phone: string): string {
+    return phone.replace(/[^\d]/g, '');
+  }
+
+  private canSendMeta(): boolean {
+    return !!this.metaToken && !!this.metaPhoneNumberId;
+  }
+
+  private canSendTwilio(): boolean {
+    return !!this.client && !!this.from && this.from !== 'whatsapp:';
+  }
+
+  private getMetaMessagesEndpoint(): string {
+    return `https://graph.facebook.com/${this.metaApiVersion}/${this.metaPhoneNumberId}/messages`;
+  }
+
+  private async sendMetaMessage(payload: Record<string, unknown>): Promise<void> {
+    if (!this.canSendMeta()) {
+      this.logger.warn('WhatsApp Meta send skipped — client not initialized');
       return;
     }
-    const toFormatted = this.formatTo(to);
-    this.logger.log(`WhatsApp sending text → from=${this.from} to=${toFormatted}`);
+
+    const response = await fetch(this.getMetaMessagesEndpoint(), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.metaToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      this.logger.error(`Meta WhatsApp send failed: status=${response.status} body=${errorText}`);
+      return;
+    }
+
+    const result = (await response.json()) as { messages?: Array<{ id?: string }> };
+    this.logger.log(`Meta WhatsApp sent — messageId=${result.messages?.[0]?.id ?? 'n/a'}`);
+  }
+
+  async sendText(to: string, body: string): Promise<void> {
+    if (this.provider === 'meta') {
+      const toFormatted = this.formatMetaTo(to);
+      await this.sendMetaMessage({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: toFormatted,
+        type: 'text',
+        text: {
+          preview_url: false,
+          body,
+        },
+      });
+      return;
+    }
+
+    if (!this.canSendTwilio()) {
+      this.logger.warn('WhatsApp Twilio sendText skipped — client not initialized');
+      return;
+    }
+
+    const toFormatted = this.formatTwilioTo(to);
+    this.logger.log(`WhatsApp (Twilio) sending text → from=${this.from} to=${toFormatted}`);
     try {
-      const msg = await this.client.messages.create({ from: this.from, to: toFormatted, body });
-      this.logger.log(`WhatsApp text sent — SID=${msg.sid} status=${msg.status}`);
+      const msg = await this.client!.messages.create({ from: this.from, to: toFormatted, body });
+      this.logger.log(`WhatsApp (Twilio) text sent — SID=${msg.sid} status=${msg.status}`);
     } catch (e: any) {
-      this.logger.error(`WhatsApp text failed: code=${e?.code} status=${e?.status} message=${e?.message}`);
+      this.logger.error(
+        `WhatsApp (Twilio) text failed: code=${e?.code} status=${e?.status} message=${e?.message}`,
+      );
     }
   }
 
   async sendDocument(to: string, pdfBuffer: Buffer, filename: string, caption: string): Promise<void> {
-    if (!this.client) return;
+    if (this.provider === 'meta') {
+      try {
+        const mediaUrl = await this.uploadPdfToCloudinary(pdfBuffer, filename);
+        await this.sendMetaMessage({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: this.formatMetaTo(to),
+          type: 'document',
+          document: {
+            link: mediaUrl,
+            filename,
+            caption,
+          },
+        });
+      } catch (e) {
+        this.logger.error(`WhatsApp (Meta) document failed: ${(e as Error).message}`);
+      }
+      return;
+    }
+
+    if (!this.canSendTwilio()) return;
+
     try {
       const mediaUrl = await this.uploadPdfToCloudinary(pdfBuffer, filename);
-      await this.client.messages.create({
+      await this.client!.messages.create({
         from: this.from,
-        to: this.formatTo(to),
+        to: this.formatTwilioTo(to),
         body: caption,
         mediaUrl: [mediaUrl],
       });
     } catch (e) {
-      this.logger.error(`WhatsApp document failed: ${(e as Error).message}`);
+      this.logger.error(`WhatsApp (Twilio) document failed: ${(e as Error).message}`);
     }
   }
 
