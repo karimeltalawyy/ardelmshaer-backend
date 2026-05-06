@@ -34,6 +34,7 @@ async function bootstrap() {
       'https://ardelmshaer.com',
       'https://www.ardelmshaer.com',
       'http://localhost:4200',
+      'http://localhost:4201',
     ],
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Authorization', 'Content-Type'],
