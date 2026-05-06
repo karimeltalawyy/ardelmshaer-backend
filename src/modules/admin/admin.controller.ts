@@ -24,6 +24,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
+import { BookingsService } from '../bookings/bookings.service';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import { UpsertConfigDto } from './dto/upsert-config.dto';
@@ -41,7 +42,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 @Roles('admin')
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly bookingsService: BookingsService,
+  ) {}
 
   // ─── Dashboard ────────────────────────────────────────────────────────────────
 
@@ -209,6 +213,17 @@ export class AdminController {
   }
 
   // ─── Bookings ─────────────────────────────────────────────────────────────────
+
+  @Get('bookings')
+  @ApiOperation({ summary: '[Admin] List all bookings' })
+  @ApiQuery({ name: 'status', required: false, enum: ['pending', 'confirmed', 'no_show', 'cancelled'] })
+  @ApiQuery({ name: 'tripId', required: false })
+  getBookings(
+    @Query('status') status?: string,
+    @Query('tripId') tripId?: string,
+  ) {
+    return this.bookingsService.findAll(status, tripId);
+  }
 
   @Delete('bookings/:id')
   @HttpCode(HttpStatus.OK)
