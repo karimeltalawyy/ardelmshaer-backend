@@ -55,6 +55,13 @@ export class AdminController {
     return this.adminService.getDashboard();
   }
 
+  @Get('operations/timeline')
+  @ApiOperation({ summary: 'Recent operational events (bookings + trips) for the activity feed' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Max events to return (default 100, max 200)' })
+  getOperationsTimeline(@Query('limit') limit?: string) {
+    return this.adminService.getOperationsTimeline(limit ? +limit : 100);
+  }
+
   // ─── Users ────────────────────────────────────────────────────────────────────
 
   @Get('drivers-for-cars')

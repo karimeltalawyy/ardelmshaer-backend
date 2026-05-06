@@ -16,6 +16,144 @@ export class AdminService {
     private s3: S3Service,
   ) {}
 
+  // ─── Operations Timeline ─────────────────────────────────────────────────────
+
+  async getOperationsTimeline(limit = 100) {
+    const take = Math.min(limit, 200);
+
+    const [bookings, trips] = await Promise.all([
+      this.prisma.booking.findMany({
+        take,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          status: true,
+          createdAt: true,
+          cancelledAt: true,
+          tripId: true,
+          origin: { select: { nameAr: true } },
+          destination: { select: { nameAr: true } },
+          trip: {
+            select: {
+              route: {
+                select: {
+                  origin: { select: { nameAr: true } },
+                  destination: { select: { nameAr: true } },
+                },
+              },
+              driver: { select: { user: { select: { fullName: true } } } },
+            },
+          },
+        },
+      }),
+      this.prisma.trip.findMany({
+        where: { status: { in: ['in_progress', 'completed', 'cancelled'] } },
+        take,
+        orderBy: { departureAt: 'desc' },
+        select: {
+          id: true,
+          status: true,
+          departureAt: true,
+          createdAt: true,
+          route: {
+            select: {
+              origin: { select: { nameAr: true } },
+              destination: { select: { nameAr: true } },
+            },
+          },
+          driver: { select: { user: { select: { fullName: true } } } },
+        },
+      }),
+    ]);
+
+    type Event = {
+      id: string;
+      occurredAt: string;
+      eventType: string;
+      summaryAr: string;
+      tripId: string | null;
+      bookingId: string | null;
+      driverName: string | null;
+    };
+
+    const events: Event[] = [];
+
+    for (const b of bookings) {
+      const originAr = b.trip?.route?.origin?.nameAr ?? b.origin?.nameAr ?? '';
+      const destAr = b.trip?.route?.destination?.nameAr ?? b.destination?.nameAr ?? '';
+      const route = originAr && destAr ? ` (${originAr} → ${destAr})` : '';
+      const driverName = b.trip?.driver?.user?.fullName ?? null;
+
+      events.push({
+        id: `booking-created-${b.id}`,
+        occurredAt: b.createdAt.toISOString(),
+        eventType: 'booking_created',
+        summaryAr: `تم إنشاء حجز جديد${route}`,
+        tripId: b.tripId ?? null,
+        bookingId: b.id,
+        driverName,
+      });
+
+      if (b.status === 'cancelled' && b.cancelledAt) {
+        events.push({
+          id: `booking-cancelled-${b.id}`,
+          occurredAt: b.cancelledAt.toISOString(),
+          eventType: 'booking_cancelled',
+          summaryAr: `تم إلغاء الحجز${route}`,
+          tripId: b.tripId ?? null,
+          bookingId: b.id,
+          driverName,
+        });
+      }
+
+      if (b.status === 'no_show') {
+        events.push({
+          id: `booking-noshow-${b.id}`,
+          occurredAt: b.createdAt.toISOString(),
+          eventType: 'booking_no_show',
+          summaryAr: `راكب لم يحضر${route}`,
+          tripId: b.tripId ?? null,
+          bookingId: b.id,
+          driverName,
+        });
+      }
+    }
+
+    for (const t of trips) {
+      const originAr = t.route?.origin?.nameAr ?? '';
+      const destAr = t.route?.destination?.nameAr ?? '';
+      const route = originAr && destAr ? ` (${originAr} → ${destAr})` : '';
+      const driverName = t.driver?.user?.fullName ?? null;
+
+      const eventTypeMap: Record<string, string> = {
+        in_progress: 'trip_started',
+        completed: 'trip_completed',
+        cancelled: 'trip_cancelled',
+      };
+      const summaryMap: Record<string, string> = {
+        in_progress: `انطلقت الرحلة${route}`,
+        completed: `اكتملت الرحلة${route}`,
+        cancelled: `تم إلغاء الرحلة${route}`,
+      };
+
+      events.push({
+        id: `trip-${t.status}-${t.id}`,
+        occurredAt: t.departureAt.toISOString(),
+        eventType: eventTypeMap[t.status] ?? t.status,
+        summaryAr: summaryMap[t.status] ?? t.status,
+        tripId: t.id,
+        bookingId: null,
+        driverName,
+      });
+    }
+
+    events.sort(
+      (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+    );
+
+    return events.slice(0, take);
+  }
+
   // ─── Dashboard ────────────────────────────────────────────────────────────────
 
   async getDashboard() {
