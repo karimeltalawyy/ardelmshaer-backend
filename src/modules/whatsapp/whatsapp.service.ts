@@ -99,8 +99,7 @@ export class WhatsappService {
 
   private async sendMetaMessage(payload: Record<string, unknown>): Promise<void> {
     if (!this.canSendMeta()) {
-      this.logger.warn('WhatsApp Meta send skipped — client not initialized');
-      return;
+      throw new Error('WhatsApp Meta client not configured — check META_WHATSAPP_ACCESS_TOKEN and META_WHATSAPP_PHONE_NUMBER_ID');
     }
 
     const response = await fetch(this.getMetaMessagesEndpoint(), {
@@ -114,8 +113,9 @@ export class WhatsappService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      this.logger.error(`Meta WhatsApp send failed: status=${response.status} body=${errorText}`);
-      return;
+      const msg = `Meta API HTTP ${response.status}: ${errorText}`;
+      this.logger.error(`Meta WhatsApp send failed — ${msg}`);
+      throw new Error(msg);
     }
 
     const result = (await response.json()) as { messages?: Array<{ id?: string }> };
@@ -157,22 +157,18 @@ export class WhatsappService {
 
   async sendDocument(to: string, pdfBuffer: Buffer, filename: string, caption: string): Promise<void> {
     if (this.provider === 'meta') {
-      try {
-        const mediaUrl = await this.uploadPdfToCloudinary(pdfBuffer, filename);
-        await this.sendMetaMessage({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: this.formatMetaTo(to),
-          type: 'document',
-          document: {
-            link: mediaUrl,
-            filename,
-            caption,
-          },
-        });
-      } catch (e) {
-        this.logger.error(`WhatsApp (Meta) document failed: ${(e as Error).message}`);
-      }
+      const mediaUrl = await this.uploadPdfToCloudinary(pdfBuffer, filename);
+      await this.sendMetaMessage({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: this.formatMetaTo(to),
+        type: 'document',
+        document: {
+          link: mediaUrl,
+          filename,
+          caption,
+        },
+      });
       return;
     }
 

@@ -90,7 +90,10 @@ export class DocumentsService {
     return document;
   }
 
-  private async dispatchManifestNotifications(booking: any, filePath: string): Promise<void> {
+  private async dispatchManifestNotifications(
+    booking: any,
+    filePath: string,
+  ): Promise<{ driverSent: boolean; driverError: string | null; adminSent: boolean; adminError: string | null }> {
     const reference = booking.bookingSerial
       ? `AMS-${String(booking.bookingSerial).padStart(6, '0')}`
       : booking.id;
@@ -106,36 +109,58 @@ export class DocumentsService {
     try {
       pdfBuffer = fs.readFileSync(filePath);
     } catch (e) {
-      this.logger.warn(`dispatchManifestNotifications: could not read PDF file — ${(e as Error).message}`);
-      return;
+      const msg = `Could not read PDF file — ${(e as Error).message}`;
+      this.logger.warn(`dispatchManifestNotifications: ${msg}`);
+      return { driverSent: false, driverError: msg, adminSent: false, adminError: msg };
     }
 
     const riderData = this.resolveRiderDataForPdf(booking);
     const driverPhone: string = booking.trip?.driver?.user?.phone ?? '';
 
+    let driverSent = false;
+    let driverError: string | null = null;
+
     if (driverPhone) {
-      await this.whatsapp.notifyDriverWithManifest({
-        driverPhone,
-        referenceNumber: reference,
-        originNameAr: origin,
-        destinationNameAr: destination,
-        departureAt,
-        pdfBuffer,
-      });
+      try {
+        await this.whatsapp.notifyDriverWithManifest({
+          driverPhone,
+          referenceNumber: reference,
+          originNameAr: origin,
+          destinationNameAr: destination,
+          departureAt,
+          pdfBuffer,
+        });
+        driverSent = true;
+      } catch (e) {
+        driverError = (e as Error).message;
+        this.logger.error(`dispatchManifestNotifications: driver notification failed — ${driverError}`);
+      }
     } else {
+      driverError = 'Driver phone number is missing on this trip';
       this.logger.warn(`dispatchManifestNotifications: driver phone missing for booking ${reference}`);
     }
 
-    await this.whatsapp.notifyAdminWithManifest({
-      referenceNumber: reference,
-      riderName: riderData.fullName,
-      riderPhone: riderData.phone,
-      originNameAr: origin,
-      destinationNameAr: destination,
-      departureAt,
-      passengerCount,
-      pdfBuffer,
-    });
+    let adminSent = false;
+    let adminError: string | null = null;
+
+    try {
+      await this.whatsapp.notifyAdminWithManifest({
+        referenceNumber: reference,
+        riderName: riderData.fullName,
+        riderPhone: riderData.phone,
+        originNameAr: origin,
+        destinationNameAr: destination,
+        departureAt,
+        passengerCount,
+        pdfBuffer,
+      });
+      adminSent = true;
+    } catch (e) {
+      adminError = (e as Error).message;
+      this.logger.error(`dispatchManifestNotifications: admin notification failed — ${adminError}`);
+    }
+
+    return { driverSent, driverError, adminSent, adminError };
   }
 
   private async dispatchManifestWithPdf(booking: any): Promise<void> {
@@ -143,7 +168,12 @@ export class DocumentsService {
     let filePath: string | null = null;
     try {
       filePath = await this.renderToPdf(html, booking.id, 'passenger_manifest');
-      await this.dispatchManifestNotifications(booking, filePath);
+      const result = await this.dispatchManifestNotifications(booking, filePath);
+      if (!result.driverSent || !result.adminSent) {
+        this.logger.warn(
+          `dispatchManifestWithPdf: partial send — driver=${result.driverSent ? 'ok' : result.driverError} admin=${result.adminSent ? 'ok' : result.adminError}`,
+        );
+      }
     } finally {
       if (filePath) {
         try { fs.unlinkSync(filePath); } catch (e) {
@@ -219,7 +249,10 @@ export class DocumentsService {
 
   // ─── Resend manifest WhatsApp notifications ──────────────────────────────────
 
-  async notifyManifest(bookingId: string, userId: string): Promise<{ sent: boolean }> {
+  async notifyManifest(bookingId: string, userId: string): Promise<{
+    driverSent: boolean; driverError: string | null;
+    adminSent: boolean; adminError: string | null;
+  }> {
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
       include: {
@@ -253,8 +286,7 @@ export class DocumentsService {
     let filePath: string | null = null;
     try {
       filePath = await this.renderToPdf(html, booking.id, 'passenger_manifest');
-      await this.dispatchManifestNotifications(booking, filePath);
-      return { sent: true };
+      return await this.dispatchManifestNotifications(booking, filePath);
     } finally {
       if (filePath) {
         try { fs.unlinkSync(filePath); } catch (e) {
