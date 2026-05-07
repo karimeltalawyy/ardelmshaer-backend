@@ -79,15 +79,12 @@ export class DocumentsService {
         : null;
     if (existingReceipt) return existingReceipt;
 
-    const html = this.buildHtml(docType, booking);
-    const fileUrl = await this.renderToPdf(html, bookingId, docType);
-
     const document = await this.prisma.document.create({
-      data: { bookingId, type: docType, fileUrl },
+      data: { bookingId, type: docType, fileUrl: null },
     });
 
     if (docType === 'passenger_manifest') {
-      this.dispatchManifestNotifications(booking, fileUrl).catch(() => {});
+      this.dispatchManifestWithPdf(booking).catch(() => {});
     }
 
     return document;
