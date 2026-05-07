@@ -16,6 +16,7 @@ import { DocumentsService } from '../documents/documents.service';
 import { PdfService } from '../pdf/pdf.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { normalizeSaudiPhone } from '../../common/validators/is-saudi-phone.validator';
+import { PickupMode } from '@prisma/client';
 
 const BOOKING_INCLUDE = {
   trip: {
@@ -681,7 +682,7 @@ export class BookingsService {
     const riderPhone = b.riderPhone || b.contactPhone;
     if (riderPhone) {
       const reference = `AMS-${b.bookingSerial?.toString().padStart(6, '0')}`;
-      const pickupAddress = b.pickupMode === 'address'
+      const pickupAddress = b.pickupMode === PickupMode.user_location
         ? (b.pickupAddress ?? '')
         : (b.pickupBranch?.addressAr ?? '');
       this.whatsappService.notifyRider({
@@ -716,7 +717,7 @@ export class BookingsService {
     const riderPhone = updated.riderPhone || updated.contactPhone;
     if (riderPhone) {
       const reference = `AMS-${updated.bookingSerial.toString().padStart(6, '0')}`;
-      const pickupAddress = updated.pickupMode === 'address'
+      const pickupAddress = updated.pickupMode === PickupMode.user_location
         ? (updated.pickupAddress ?? '')
         : (updated.pickupBranch?.addressAr ?? '');
       this.whatsappService.notifyRider({
