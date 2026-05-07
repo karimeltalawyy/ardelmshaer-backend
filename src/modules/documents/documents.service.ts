@@ -368,11 +368,19 @@ export class DocumentsService {
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
       });
       const page = await browser.newPage();
-      // Avoid networkidle0 — templates load Google Fonts and stall/hang in Docker or offline egress.
       await page.setContent(html, {
         waitUntil: 'domcontentloaded',
         timeout: 60_000,
       });
+      // Wait for Google Fonts (@import Cairo) to finish loading so Arabic glyphs render correctly.
+      // Uses a 6-second hard cap so a network hiccup cannot stall generation indefinitely.
+      await page.evaluate(
+        () =>
+          Promise.race([
+            document.fonts.ready,
+            new Promise<void>((resolve) => setTimeout(resolve, 6000)),
+          ]),
+      );
       await page.pdf({
         path: filePath,
         format: 'A4',
