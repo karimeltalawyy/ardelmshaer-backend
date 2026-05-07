@@ -37,6 +37,48 @@ const TRIP_INCLUDE = {
 export class TripsService {
   constructor(private prisma: PrismaService) {}
 
+  private mapTripBookingsForDriver(
+    bookings: Array<{
+      id: string;
+      status: string;
+      paymentStatus: string;
+      paymentMethod: string;
+      totalPrice: any;
+      passengers: Array<{
+        fullName: string;
+        nationality: string;
+        idNumber: string;
+        phone: string;
+      }>;
+      documents: Array<{ type: string }>;
+    }>,
+  ) {
+    return bookings.map((booking) => {
+      const passengerManifestGenerationCount = booking.documents.filter(
+        (doc) => doc.type === 'passenger_manifest',
+      ).length;
+      const contractGenerationCount = booking.documents.filter(
+        (doc) => doc.type === 'contract',
+      ).length;
+
+      return {
+        id: booking.id,
+        status: booking.status,
+        paymentStatus: booking.paymentStatus,
+        paymentMethod: booking.paymentMethod,
+        totalPrice: Number(booking.totalPrice),
+        passengerManifestGenerationCount,
+        contractGenerationCount,
+        passengers: booking.passengers.map((passenger) => ({
+          fullName: passenger.fullName,
+          nationality: passenger.nationality,
+          idNumber: passenger.idNumber,
+          phone: passenger.phone,
+        })),
+      };
+    });
+  }
+
   private presentTrip<T extends Record<string, any>>(trip: T) {
     const {
       bookingMode: _bookingMode,
@@ -222,13 +264,22 @@ export class TripsService {
           where: { status: { not: 'cancelled' } },
           include: {
             passengers: true,
+            documents: {
+              select: {
+                type: true,
+              },
+            },
           },
         },
       },
     });
 
     if (!trip) throw new NotFoundException('Trip not found');
-    return this.presentTrip(trip);
+
+    return {
+      ...this.presentTrip(trip),
+      bookings: this.mapTripBookingsForDriver(trip.bookings),
+    };
   }
 
   // ─── Driver's trips ───────────────────────────────────────────────────────────
@@ -706,5 +757,20 @@ export class TripsService {
 
   async cancel(tripId: string, userId: string) {
     return this.updateStatus(tripId, userId, { status: 'cancelled' });
+  }
+
+  // ─── Hard-delete trip (admin only) ────────────────────────────────────────────
+
+  async hardDelete(tripId: string): Promise<void> {
+    const trip = await this.prisma.trip.findUnique({ where: { id: tripId } });
+    if (!trip) throw new NotFoundException('Trip not found');
+
+    await this.prisma.$transaction([
+      this.prisma.booking.updateMany({
+        where: { tripId },
+        data: { tripId: null },
+      }),
+      this.prisma.trip.delete({ where: { id: tripId } }),
+    ]);
   }
 }

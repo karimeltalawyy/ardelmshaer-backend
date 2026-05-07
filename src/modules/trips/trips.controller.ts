@@ -87,6 +87,14 @@ export class TripsController {
     return this.tripsService.cancel(id, user.id);
   }
 
+  @Delete(':id/hard')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: '[Admin] Hard-delete a trip from the database' })
+  hardDelete(@Param('id', ParseUUIDPipe) id: string) {
+    return this.tripsService.hardDelete(id);
+  }
+
   // ─── Public (authenticated) ───────────────────────────────────────────────────
 
   @Get('search')
