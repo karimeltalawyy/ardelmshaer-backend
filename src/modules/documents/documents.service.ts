@@ -93,7 +93,7 @@ export class DocumentsService {
     return document;
   }
 
-  private async dispatchManifestNotifications(booking: any, fileUrl: string): Promise<void> {
+  private async dispatchManifestNotifications(booking: any, filePath: string): Promise<void> {
     const reference = booking.bookingSerial
       ? `AMS-${String(booking.bookingSerial).padStart(6, '0')}`
       : booking.id;
@@ -105,12 +105,9 @@ export class DocumentsService {
       ? booking.passengers.length
       : booking.seatCount ?? 0;
 
-    // Read PDF from disk so we can attach it
     let pdfBuffer: Buffer;
     try {
-      const filePath = fileUrl.replace(/^https?:\/\/[^/]+\/uploads\/documents\//, '');
-      const absolutePath = require('path').join(process.cwd(), 'uploads', 'documents', filePath.split('/').pop()!);
-      pdfBuffer = require('fs').readFileSync(absolutePath);
+      pdfBuffer = fs.readFileSync(filePath);
     } catch (e) {
       this.logger.warn(`dispatchManifestNotifications: could not read PDF file — ${(e as Error).message}`);
       return;
@@ -119,7 +116,6 @@ export class DocumentsService {
     const riderData = this.resolveRiderDataForPdf(booking);
     const driverPhone: string = booking.trip?.driver?.user?.phone ?? '';
 
-    // Notify driver
     if (driverPhone) {
       await this.whatsapp.notifyDriverWithManifest({
         driverPhone,
@@ -133,7 +129,6 @@ export class DocumentsService {
       this.logger.warn(`dispatchManifestNotifications: driver phone missing for booking ${reference}`);
     }
 
-    // Notify admin
     await this.whatsapp.notifyAdminWithManifest({
       referenceNumber: reference,
       riderName: riderData.fullName,
@@ -144,6 +139,19 @@ export class DocumentsService {
       passengerCount,
       pdfBuffer,
     });
+  }
+
+  private async dispatchManifestWithPdf(booking: any): Promise<void> {
+    const html = this.buildHtml('passenger_manifest', booking);
+    let filePath: string | null = null;
+    try {
+      filePath = await this.renderToPdf(html, booking.id, 'passenger_manifest');
+      await this.dispatchManifestNotifications(booking, filePath);
+    } finally {
+      if (filePath) {
+        try { fs.unlinkSync(filePath); } catch {}
+      }
+    }
   }
 
   /** Avoid 500s from null route/driver/car; message helps ops fix data. */
@@ -398,8 +406,6 @@ export class DocumentsService {
       await browser?.close();
     }
 
-    // Return a root-relative path so the stored URL is deployment-agnostic.
-    // The frontend resolves it against the API origin via resolveAbsoluteAssetUrl().
-    return `/uploads/documents/${fileName}`;
+    return filePath;
   }
 }
