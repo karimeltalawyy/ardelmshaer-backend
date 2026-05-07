@@ -149,7 +149,9 @@ export class DocumentsService {
       await this.dispatchManifestNotifications(booking, filePath);
     } finally {
       if (filePath) {
-        try { fs.unlinkSync(filePath); } catch {}
+        try { fs.unlinkSync(filePath); } catch (e) {
+          this.logger.warn(`dispatchManifestWithPdf: could not delete temp PDF ${filePath} — ${(e as Error).message}`);
+        }
       }
     }
   }
