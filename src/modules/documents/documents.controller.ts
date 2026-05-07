@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   Post,
   Param,
   Body,
@@ -52,5 +53,21 @@ export class DocumentsController {
   ) {
     const docType = slugToDocumentType(slug);
     return this.documentsService.generate(bookingId, user.id, docType);
+  }
+
+  @Get(':slug/html')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  @ApiOperation({ summary: 'Return the raw HTML for a booking document (for browser print)' })
+  @ApiParam({
+    name: 'slug',
+    enum: ['passenger-manifest', 'contract', 'payment-receipt'],
+  })
+  getHtmlBySlug(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Param('slug') slug: string,
+    @CurrentUser() user: any,
+  ) {
+    const docType = slugToDocumentType(slug);
+    return this.documentsService.getHtml(bookingId, user.id, docType);
   }
 }
