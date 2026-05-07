@@ -1,4 +1,4 @@
-import { STAMP_DATA_URI, QR_DATA_URI } from '../utils/document-assets';
+import { STAMP_DATA_URI, QR_DATA_URI, LOGO_DATA_URI } from '../utils/document-assets';
 
 const PRIMARY = '#0d5c42';
 const COMPANY_NAME = 'مؤسسة أرض المشاعر للنقل البري';
@@ -23,8 +23,7 @@ export function passengerManifestTemplate(data: {
   rider: { fullName: string; phone: string };
   passengers: Array<{ fullName: string; nationality: string; idNumber: string; phone: string }>;
 }): string {
-  const operationType =
-    data.trip.bookingMode === 'per_seat' ? 'نقل بين المدن' : 'تأجير مركبة كاملة';
+  const operationType = 'نقل بين المدن';
 
   const driverPhotoHtml = data.trip.driver.photo
     ? `<img src="${data.trip.driver.photo}" class="driver-photo" alt="صورة السائق" />`
@@ -39,6 +38,7 @@ export function passengerManifestTemplate(data: {
 
   const stampSrc = STAMP_DATA_URI;
   const qrSrc = QR_DATA_URI;
+  const logoSrc = LOGO_DATA_URI;
 
   return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -133,8 +133,7 @@ export function passengerManifestTemplate(data: {
       <div class="co-sub">${COMPANY_CITY}</div>
     </div>
     <div class="header-center">
-      ${stampSrc ? `<img src="${stampSrc}" alt="شعار" />` : ''}
-      <div class="co-logo-text">${COMPANY_NAME}</div>
+      ${logoSrc ? `<img src="${logoSrc}" alt="شعار" />` : ''}
     </div>
     <div class="header-left">
       <span>نوع التشغيل: ${operationType}</span>
@@ -195,8 +194,8 @@ export function passengerManifestTemplate(data: {
         <th>عدد الركاب</th>
       </tr>
       <tr>
-        <td>${data.rider.fullName}</td>
-        <td>${data.rider.phone || '—'}</td>
+        <td>${(data.passengers[0]?.fullName || data.rider.fullName) || '—'}</td>
+        <td>${(data.passengers[0]?.phone || data.rider.phone) || '—'}</td>
         <td>${data.passengers.length}</td>
       </tr>
     </table>

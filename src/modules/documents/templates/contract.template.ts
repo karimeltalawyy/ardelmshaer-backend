@@ -1,4 +1,4 @@
-import { STAMP_DATA_URI, QR_DATA_URI } from '../utils/document-assets';
+import { STAMP_DATA_URI, QR_DATA_URI, LOGO_DATA_URI } from '../utils/document-assets';
 
 const PRIMARY = '#0d5c42';
 const COMPANY_NAME = 'مؤسسة أرض المشاعر للنقل البري';
@@ -26,8 +26,7 @@ export function contractTemplate(data: {
   totalPrice: string;
   paymentMethod: string;
 }): string {
-  const operationType =
-    data.trip.bookingMode === 'per_seat' ? 'نقل بين المدن' : 'تأجير مركبة كاملة';
+  const operationType = 'نقل بين المدن';
 
   const driverPhotoHtml = data.trip.driver.photo
     ? `<img src="${data.trip.driver.photo}" class="driver-photo" alt="صورة السائق" />`
@@ -42,6 +41,7 @@ export function contractTemplate(data: {
 
   const stampSrc = STAMP_DATA_URI;
   const qrSrc = QR_DATA_URI;
+  const logoSrc = LOGO_DATA_URI;
 
   return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -138,8 +138,7 @@ export function contractTemplate(data: {
       <div class="co-sub">${COMPANY_CITY}</div>
     </div>
     <div class="header-center">
-      ${stampSrc ? `<img src="${stampSrc}" alt="شعار" />` : ''}
-      <div class="co-logo-text">${COMPANY_NAME}</div>
+      ${logoSrc ? `<img src="${logoSrc}" alt="شعار" />` : ''}
     </div>
     <div class="header-left">
       <span>نوع التشغيل: ${operationType}</span>
@@ -219,15 +218,6 @@ export function contractTemplate(data: {
     <p>- في حال إلغاء التعاقد لأي سبب شخصي أو أسباب أخرى تتعلق في الحجوزات أو الأنظمة، تكون سياسة الإلغاء والاستبدال حسب نظام وزارة التجارة السعودية، في حال الحجز وتم الإلغاء قبل موعد الرحلة بأكثر من 24 ساعة يتم استرداد المبلغ كاملاً.</p>
     <p>- وفي حالة طلب الطرف الثاني الحجز من خلال الموقع الإلكتروني للمؤسسة، يعتبر هذا الحجز وموافقته على الشروط والأحكام بالموقع الإلكتروني هو موافقة على هذا العقد لتنفيذ عملية النقل المتفق عليها مع الطرف الأول بواسطة حافلات المؤسسة المرخصة والمتوافقة مع الاشتراطات المقررة من هيئة النقل.</p>
   </div>
-
-  ${data.passengers.length > 0 ? `
-  <div class="pax-section">
-    <div class="pax-section-hdr">قائمة الركاب (${data.passengers.length})</div>
-    <table class="pax-table">
-      <tr><th>م</th><th>اسم الضيف</th><th>الجنسية</th><th>رقم الهوية / الجواز</th></tr>
-      ${passengerRows}
-    </table>
-  </div>` : ''}
 
   <!-- Footer -->
   <div class="footer">
