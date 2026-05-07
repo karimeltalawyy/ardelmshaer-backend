@@ -77,6 +77,26 @@ export class WhatsappService {
     return `https://graph.facebook.com/${this.metaApiVersion}/${this.metaPhoneNumberId}/messages`;
   }
 
+  private async sendMetaTemplate(
+    to: string,
+    templateName: string,
+    bodyParams: string[],
+  ): Promise<void> {
+    await this.sendMetaMessage({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: this.formatMetaTo(to),
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: 'ar' },
+        components: bodyParams.length
+          ? [{ type: 'body', parameters: bodyParams.map(text => ({ type: 'text', text })) }]
+          : [],
+      },
+    });
+  }
+
   private async sendMetaMessage(payload: Record<string, unknown>): Promise<void> {
     if (!this.canSendMeta()) {
       this.logger.warn('WhatsApp Meta send skipped — client not initialized');
@@ -208,6 +228,19 @@ export class WhatsappService {
       timeZone: 'Asia/Riyadh',
     }).format(new Date(params.requestedDate));
 
+    if (this.provider === 'meta') {
+      await this.sendMetaTemplate(this.adminNumber, 'ams_booking_request', [
+        params.referenceNumber,
+        params.originNameAr,
+        params.destinationNameAr,
+        dateStr,
+        carLabel,
+        String(params.passengerCount),
+        params.contactPhone,
+      ]);
+      return;
+    }
+
     const passengerLines = params.passengers
       .map((p, i) => `${i + 1}. ${p.fullName} | ${p.idNumber} | ${p.nationality} | ${p.phone}`)
       .join('\n');
@@ -252,6 +285,21 @@ export class WhatsappService {
       timeZone: 'Asia/Riyadh',
     }).format(params.departureAt);
 
+    if (this.provider === 'meta') {
+      await this.sendMetaTemplate(
+        this.adminNumber,
+        'ams_trip_manifest',
+        [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr],
+      );
+      await this.sendDocument(
+        this.adminNumber,
+        params.pdfBuffer,
+        `booking-${params.referenceNumber}.pdf`,
+        `كشف ركاب — ${params.referenceNumber}`,
+      );
+      return;
+    }
+
     const body = [
       '🚗 *حجز جديد*',
       '',
@@ -286,6 +334,21 @@ export class WhatsappService {
       timeZone: 'Asia/Riyadh',
     }).format(params.departureAt);
 
+    if (this.provider === 'meta') {
+      await this.sendMetaTemplate(
+        params.driverPhone,
+        'ams_trip_manifest',
+        [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr],
+      );
+      await this.sendDocument(
+        params.driverPhone,
+        params.pdfBuffer,
+        `manifest-${params.referenceNumber}.pdf`,
+        `كشف ركاب — ${params.referenceNumber}`,
+      );
+      return;
+    }
+
     const body = [
       '📋 *كشف ركاب*',
       '',
@@ -319,6 +382,18 @@ export class WhatsappService {
       hour: '2-digit', minute: '2-digit',
       timeZone: 'Asia/Riyadh',
     }).format(params.departureAt);
+
+    if (this.provider === 'meta') {
+      await this.sendMetaTemplate(params.riderPhone, 'ams_booking_confirmed', [
+        params.riderName,
+        params.referenceNumber,
+        params.originNameAr,
+        params.destinationNameAr,
+        dateStr,
+        params.pickupAddress,
+      ]);
+      return;
+    }
 
     const body = [
       '✅ *تم تأكيد حجزك!*',
