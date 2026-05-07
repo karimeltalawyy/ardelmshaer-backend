@@ -652,7 +652,7 @@ export class BookingsService {
 
     const departureAt = new Date(dto.departureAt);
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const trip = await tx.trip.create({
         data: {
           carId: dto.carId,
@@ -676,6 +676,26 @@ export class BookingsService {
 
       return this.withCancellationMeta(updated, true);
     });
+
+    const b = result as any;
+    const riderPhone = b.riderPhone || b.contactPhone;
+    if (riderPhone) {
+      const reference = `AMS-${b.bookingSerial?.toString().padStart(6, '0')}`;
+      const pickupAddress = b.pickupMode === 'address'
+        ? (b.pickupAddress ?? '')
+        : (b.pickupBranch?.addressAr ?? '');
+      this.whatsappService.notifyRider({
+        riderPhone,
+        riderName: b.riderName || 'العميل',
+        referenceNumber: reference,
+        originNameAr: b.trip?.route?.origin?.nameAr ?? '',
+        destinationNameAr: b.trip?.route?.destination?.nameAr ?? '',
+        departureAt,
+        pickupAddress,
+      }).catch(() => {});
+    }
+
+    return result;
   }
 
   async assignTrip(bookingId: string, tripId: string) {
@@ -692,6 +712,23 @@ export class BookingsService {
       data: { tripId, status: 'confirmed' },
       include: BOOKING_INCLUDE,
     });
+
+    const riderPhone = updated.riderPhone || updated.contactPhone;
+    if (riderPhone) {
+      const reference = `AMS-${updated.bookingSerial.toString().padStart(6, '0')}`;
+      const pickupAddress = updated.pickupMode === 'address'
+        ? (updated.pickupAddress ?? '')
+        : (updated.pickupBranch?.addressAr ?? '');
+      this.whatsappService.notifyRider({
+        riderPhone,
+        riderName: updated.riderName || 'العميل',
+        referenceNumber: reference,
+        originNameAr: updated.trip?.route?.origin?.nameAr ?? '',
+        destinationNameAr: updated.trip?.route?.destination?.nameAr ?? '',
+        departureAt: updated.trip?.departureAt ?? new Date(),
+        pickupAddress,
+      }).catch(() => {});
+    }
 
     return this.withCancellationMeta(updated, true);
   }
