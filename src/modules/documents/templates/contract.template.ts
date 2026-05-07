@@ -15,10 +15,23 @@ export function contractTemplate(data: {
   totalPrice: string;
   paymentMethod: string;
   passengerCount: number | null;
+  passengers: Array<{ fullName: string; nationality: string; idNumber: string; phone: string }>;
 }): string {
   const today = data.issuedAt;
   const paymentLabel = data.paymentMethod === 'cash' ? 'نقدي' : data.paymentMethod === 'card' ? 'بطاقة بنكية' : 'محفظة إلكترونية';
   const bookingLabel = `حجز مركبة لعدد ${data.passengerCount ?? 0} ركاب`;
+  const passengerRows = data.passengers
+    .map(
+      (p, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${p.fullName}</td>
+        <td>${p.nationality}</td>
+        <td>${p.idNumber}</td>
+        <td>${p.phone || '—'}</td>
+      </tr>`,
+    )
+    .join('');
 
   const stampSrc = STAMP_DATA_URI;
   const qrSrc = QR_DATA_URI;
@@ -70,6 +83,10 @@ export function contractTemplate(data: {
   .field p { font-weight: 600; }
   .clause { margin: 8px 0; padding-right: 12px; border-right: 3px solid #e8c8c8; color: #444; }
   .clause strong { color: #1a1a2e; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+  th { background: #8b1a2e; color: #fff; padding: 8px 10px; font-size: 12px; text-align: right; }
+  td { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; font-size: 12px; }
+  tr:nth-child(even) td { background: #fdf5f5; }
 
   /* ── Signatures ──────────────────────────────────────────────────────── */
   .signatures {
@@ -158,6 +175,21 @@ export function contractTemplate(data: {
       <div class="field"><label>المبلغ الإجمالي</label><p>${data.totalPrice} ريال</p></div>
       <div class="field"><label>طريقة الدفع</label><p>${paymentLabel}</p></div>
     </div>
+
+    ${data.passengers.length > 0 ? `
+    <h3>قائمة الركاب (${data.passengers.length})</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>الاسم الكامل</th>
+          <th>الجنسية</th>
+          <th>رقم الهوية</th>
+          <th>رقم الجوال</th>
+        </tr>
+      </thead>
+      <tbody>${passengerRows}</tbody>
+    </table>` : ''}
 
     <h3>بنود العقد</h3>
 

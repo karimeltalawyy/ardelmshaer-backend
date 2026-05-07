@@ -170,11 +170,18 @@ export class DocumentsService {
     docType: 'passenger_manifest' | 'contract' | 'payment_receipt',
   ): Promise<void> {
     if (docType === 'contract') {
-      const exists = await this.prisma.document.findFirst({
-        where: { bookingId, type: 'contract' },
-      });
-      if (exists) {
-        throw new ConflictException('Transport contract has already been issued for this booking');
+      const { status } = trip;
+      if (status === 'cancelled') {
+        throw new BadRequestException('Cannot generate contract for a cancelled trip');
+      }
+      const count = await this.prisma.document.count({ where: { bookingId, type: 'contract' } });
+      // After completion: only one final contract is allowed.
+      if (status === 'completed' && count >= 1) {
+        throw new ConflictException('Transport contract has already been issued for this completed booking');
+      }
+      // While active: allow up to 3 re-generations (driver may update passenger list on the road).
+      if (count >= 3) {
+        throw new BadRequestException('Maximum of 3 contract generations reached for this booking');
       }
       return;
     }
@@ -315,6 +322,12 @@ export class DocumentsService {
         totalPrice: Number(booking.totalPrice).toFixed(2),
         paymentMethod: booking.paymentMethod,
         passengerCount: booking.seatCount,
+        passengers: booking.passengers.map((p: any) => ({
+          fullName: p.fullName,
+          nationality: p.nationality,
+          idNumber: p.idNumber,
+          phone: p.phone ?? '',
+        })),
       });
     }
 
