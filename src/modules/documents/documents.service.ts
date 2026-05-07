@@ -237,6 +237,40 @@ export class DocumentsService {
     return this.prisma.document.findMany({ where: { bookingId } });
   }
 
+  async getHtml(bookingId: string, userId: string, docType: 'passenger_manifest' | 'contract' | 'payment_receipt'): Promise<string> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        trip: {
+          include: {
+            route: {
+              include: {
+                origin: { select: { nameAr: true, nameEn: true } },
+                destination: { select: { nameAr: true, nameEn: true } },
+              },
+            },
+            car: { select: { brand: true, model: true, plateNumber: true, carType: true } },
+            driver: { include: { user: { select: { id: true, fullName: true, phone: true } } } },
+          },
+        },
+        passengers: true,
+        rider: { select: { id: true, fullName: true, phone: true, role: true } },
+      },
+    });
+
+    if (!booking) throw new NotFoundException('Booking not found');
+    await this.assertAccess(booking, userId);
+
+    if (!booking.trip) {
+      throw new BadRequestException(
+        'This booking has no trip assigned. Link a trip before generating HTML.',
+      );
+    }
+
+    this.assertTripDataCompleteForPdf(booking);
+    return this.buildHtml(docType, booking);
+  }
+
   private async assertAccess(booking: any, userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -279,7 +313,7 @@ export class DocumentsService {
 
   // ─── Build HTML ───────────────────────────────────────────────────────────────
 
-  private buildHtml(docType: string, booking: any): string {
+  protected buildHtml(docType: string, booking: any): string {
     const issuedAt = new Intl.DateTimeFormat('ar-SA', {
       year: 'numeric', month: 'long', day: 'numeric',
       hour: '2-digit', minute: '2-digit',
