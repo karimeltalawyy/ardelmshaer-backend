@@ -1,35 +1,42 @@
 import { STAMP_DATA_URI, QR_DATA_URI } from '../utils/document-assets';
 
+const PRIMARY = '#0d5c42';
+const COMPANY_NAME = 'مؤسسة أرض المشاعر للنقل البري';
+const COMPANY_CR = '4031276214';
+const COMPANY_CITY = 'مكة المكرمة';
+const COMPANY_WHATSAPP = '+966 55 621 7079';
+
 export function contractTemplate(data: {
   bookingId: string;
+  referenceNumber: string;
   issuedAt: string;
   trip: {
+    departureDate: string;
+    departureTime: string;
     departureAt: string;
-    origin: { nameAr: string; nameEn: string };
-    destination: { nameAr: string; nameEn: string };
-    driver: { fullName: string; phone: string };
-    car: { brand: string; model: string; plateNumber: string; carType: string };
+    origin: { nameAr: string };
+    destination: { nameAr: string };
+    driver: { fullName: string; phone: string; photo: string | null; idNumber: string };
+    car: { plateNumber: string };
     bookingMode: string;
   };
   rider: { fullName: string; phone: string };
-  totalPrice: string;
-  paymentMethod: string;
   passengerCount: number | null;
   passengers: Array<{ fullName: string; nationality: string; idNumber: string; phone: string }>;
+  totalPrice: string;
+  paymentMethod: string;
 }): string {
-  const today = data.issuedAt;
-  const paymentLabel = data.paymentMethod === 'cash' ? 'نقدي' : data.paymentMethod === 'card' ? 'بطاقة بنكية' : 'محفظة إلكترونية';
-  const bookingLabel = `حجز مركبة لعدد ${data.passengerCount ?? 0} ركاب`;
+  const operationType =
+    data.trip.bookingMode === 'per_seat' ? 'نقل بين المدن' : 'تأجير مركبة كاملة';
+
+  const driverPhotoHtml = data.trip.driver.photo
+    ? `<img src="${data.trip.driver.photo}" class="driver-photo" alt="صورة السائق" />`
+    : `<div class="driver-photo driver-photo--placeholder"><span>لا&nbsp;صورة</span></div>`;
+
   const passengerRows = data.passengers
     .map(
-      (p, i) => `
-      <tr>
-        <td>${i + 1}</td>
-        <td>${p.fullName}</td>
-        <td>${p.nationality}</td>
-        <td>${p.idNumber}</td>
-        <td>${p.phone || '—'}</td>
-      </tr>`,
+      (p, i) =>
+        `<tr><td class="tc">${i + 1}</td><td>${p.fullName}</td><td>${p.nationality || '—'}</td><td>${p.idNumber || '—'}</td></tr>`,
     )
     .join('');
 
@@ -40,201 +47,201 @@ export function contractTemplate(data: {
 <html dir="rtl" lang="ar">
 <head>
 <meta charset="UTF-8"/>
+<title>إبرام عقد بين الطرفين</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Cairo', sans-serif; color: #1a1a2e; background: #fff; padding: 40px; font-size: 13px; line-height: 1.8; position: relative; }
+  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Cairo',sans-serif;color:#1a1a1a;background:#fff;font-size:12.5px;line-height:1.7;}
 
-  /* ── Watermark stamp ─────────────────────────────────────────────────── */
-  .watermark {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) rotate(-20deg);
-    width: 280px;
-    height: 280px;
-    opacity: 0.07;
-    pointer-events: none;
-    z-index: 0;
-  }
+  /* ── Page layout ── */
+  .page{max-width:780px;margin:0 auto;padding:22px 28px 18px;}
 
-  /* ── Header ──────────────────────────────────────────────────────────── */
-  .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    border-bottom: 3px solid #8b1a2e;
-    padding-bottom: 14px;
-    margin-bottom: 28px;
-    position: relative;
-    z-index: 1;
-  }
-  .header-brand { display: flex; flex-direction: column; gap: 2px; }
-  .company-name { font-size: 17px; font-weight: 700; color: #8b1a2e; }
-  .company-sub { font-size: 11px; color: #555; }
-  .doc-title { font-size: 18px; font-weight: 700; text-align: center; color: #1a1a2e; }
-  .doc-meta { font-size: 11px; color: #666; text-align: left; }
+  /* ── Watermark ── */
+  .watermark{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-20deg);width:260px;height:260px;opacity:.05;pointer-events:none;z-index:0;}
 
-  /* ── Body content ────────────────────────────────────────────────────── */
-  .body-content { position: relative; z-index: 1; }
-  h3 { font-size: 14px; color: #8b1a2e; margin: 20px 0 8px; border-bottom: 1px solid #e0e0e0; padding-bottom: 4px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 32px; margin-bottom: 12px; }
-  .field label { color: #666; font-size: 11px; }
-  .field p { font-weight: 600; }
-  .clause { margin: 8px 0; padding-right: 12px; border-right: 3px solid #e8c8c8; color: #444; }
-  .clause strong { color: #1a1a2e; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-  th { background: #8b1a2e; color: #fff; padding: 8px 10px; font-size: 12px; text-align: right; }
-  td { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; font-size: 12px; }
-  tr:nth-child(even) td { background: #fdf5f5; }
+  /* ── Header ── */
+  .header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid ${PRIMARY};padding-bottom:10px;margin-bottom:14px;position:relative;z-index:1;}
+  .header-right{text-align:right;}
+  .header-right .co-name{font-size:14px;font-weight:700;color:${PRIMARY};}
+  .header-right .co-sub{font-size:11px;color:#555;margin-top:2px;}
+  .header-center{text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;}
+  .header-center img{width:70px;height:70px;object-fit:contain;}
+  .header-center .co-logo-text{font-size:10px;font-weight:600;color:${PRIMARY};text-align:center;line-height:1.4;}
+  .header-left{text-align:left;font-size:11px;color:#444;line-height:1.8;}
+  .header-left span{display:block;}
 
-  /* ── Signatures ──────────────────────────────────────────────────────── */
-  .signatures {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 32px;
-    margin-top: 40px;
-    position: relative;
-    z-index: 1;
-  }
-  .sig-box { border-top: 1px solid #ccc; padding-top: 8px; text-align: center; }
-  .sig-name { font-weight: 700; margin-bottom: 4px; }
-  .sig-label { font-size: 11px; color: #999; }
+  /* ── Doc title ── */
+  .doc-title{text-align:center;font-size:21px;font-weight:700;color:#1a1a1a;margin:14px 0 12px;position:relative;z-index:1;}
+  .doc-title::after{content:'';display:block;width:200px;height:2px;background:${PRIMARY};margin:4px auto 0;}
 
-  /* ── Stamp area in signatures ────────────────────────────────────────── */
-  .sig-stamp-area {
-    margin-top: 10px;
-    min-height: 70px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px dashed #ddd;
-    border-radius: 4px;
-    background: #fafafa;
-  }
-  .sig-stamp-area-label { font-size: 10px; color: #bbb; }
+  /* ── Two-column section ── */
+  .two-col{display:grid;grid-template-columns:38% 62%;border:1px solid #b8b8b8;position:relative;z-index:1;margin-bottom:8px;}
+  .col-box{padding:0;}
+  .col-box + .col-box{border-right:1px solid #b8b8b8;}
+  .section-hdr{background:${PRIMARY};color:#fff;font-size:12px;font-weight:700;padding:5px 10px;text-align:center;}
 
-  /* ── Footer ──────────────────────────────────────────────────────────── */
-  .footer {
-    margin-top: 32px;
-    border-top: 1px solid #e0e0e0;
-    padding-top: 14px;
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    position: relative;
-    z-index: 1;
-  }
-  .footer-left { display: flex; flex-direction: column; gap: 6px; }
-  .footer-copy { color: #999; font-size: 11px; }
-  .footer-cr { font-size: 11px; color: #555; font-weight: 600; }
-  .footer-qr { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .footer-qr img { width: 72px; height: 72px; object-fit: contain; }
-  .footer-qr-label { font-size: 10px; color: #888; }
+  /* ── Driver info column ── */
+  .driver-body{padding:10px;}
+  .driver-photo{display:block;width:100%;max-width:100px;height:120px;object-fit:cover;border:1px solid #ccc;border-radius:3px;margin:0 auto 10px;}
+  .driver-photo--placeholder{width:100px;height:120px;border:1px dashed #ccc;border-radius:3px;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;background:#f8f8f8;color:#aaa;font-size:11px;text-align:center;}
+  .driver-row{font-size:12px;margin-bottom:4px;display:flex;gap:6px;}
+  .driver-row .lbl{color:#555;font-size:11.5px;white-space:nowrap;}
+  .driver-row .val{font-weight:600;}
+
+  /* ── Trip info column ── */
+  .trip-body{padding:0;}
+  .trip-table{width:100%;border-collapse:collapse;}
+  .trip-table th{background:${PRIMARY};color:#fff;font-size:11.5px;font-weight:600;padding:5px 8px;text-align:center;border-left:1px solid rgba(255,255,255,.3);}
+  .trip-table td{font-size:12px;padding:6px 8px;text-align:center;border-bottom:1px solid #e8e8e8;border-left:1px solid #e8e8e8;vertical-align:middle;}
+  .trip-table tr:last-child td{border-bottom:none;}
+
+  /* ── Basic passenger row ── */
+  .pax-basic{border:1px solid #b8b8b8;border-top:none;position:relative;z-index:1;margin-bottom:8px;}
+  .pax-basic-table{width:100%;border-collapse:collapse;}
+  .pax-basic-table th{background:${PRIMARY};color:#fff;font-size:11.5px;font-weight:600;padding:5px 8px;text-align:center;border-left:1px solid rgba(255,255,255,.3);}
+  .pax-basic-table td{font-size:12px;padding:6px 8px;text-align:center;border-left:1px solid #e8e8e8;}
+
+  /* ── Contract body ── */
+  .contract-body{position:relative;z-index:1;font-size:12px;line-height:1.9;color:#1a1a1a;margin-bottom:10px;text-align:justify;}
+  .contract-body p{margin-bottom:6px;}
+  .contract-body .parties{margin:8px 0;font-weight:600;}
+  .contract-body .party-line{margin:2px 0;}
+
+  /* ── Passengers table (if any) ── */
+  .pax-section{position:relative;z-index:1;margin-bottom:8px;}
+  .pax-section-hdr{background:${PRIMARY};color:#fff;font-size:12px;font-weight:700;padding:5px 10px;text-align:center;margin-bottom:0;}
+  .pax-table{width:100%;border-collapse:collapse;border:1px solid #b8b8b8;}
+  .pax-table th{background:#e8f4ef;color:#1a1a1a;font-size:11.5px;font-weight:700;padding:5px 8px;text-align:center;border:1px solid #b8b8b8;}
+  .pax-table td{font-size:12px;padding:5px 8px;text-align:center;border:1px solid #e0e0e0;}
+  .pax-table tr:nth-child(even) td{background:#f7f7f7;}
+  .tc{color:#555;}
+
+  /* ── Footer ── */
+  .footer{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #d0d0d0;padding-top:10px;margin-top:12px;position:relative;z-index:1;}
+  .footer-left{display:flex;flex-direction:column;align-items:flex-start;gap:5px;}
+  .footer-left img{width:56px;height:56px;object-fit:contain;}
+  .footer-left .wa{font-size:11.5px;font-weight:600;color:#1a1a1a;}
+  .footer-center{font-size:12px;color:#555;}
+  .footer-right img{width:62px;height:62px;object-fit:contain;}
 </style>
 </head>
 <body>
+<div class="page">
 
   ${stampSrc ? `<img class="watermark" src="${stampSrc}" alt="" aria-hidden="true" />` : ''}
 
+  <!-- Header -->
   <div class="header">
-    <div class="header-brand">
-      <span class="company-name">مؤسسة أرض المشاعر للنقل البري</span>
-      <span class="company-sub">س.ت: 4031276214 — مكة المكرمة</span>
+    <div class="header-right">
+      <div class="co-name">${COMPANY_NAME}</div>
+      <div class="co-sub">سجل تجاري: ${COMPANY_CR}</div>
+      <div class="co-sub">${COMPANY_CITY}</div>
     </div>
-    <div class="doc-title">عقد نقل بري</div>
-    <div class="doc-meta">
-      <div>رقم العقد: ${data.bookingId.slice(0, 8).toUpperCase()}</div>
-      <div>تاريخ الإصدار: ${today}</div>
+    <div class="header-center">
+      ${stampSrc ? `<img src="${stampSrc}" alt="شعار" />` : ''}
+      <div class="co-logo-text">${COMPANY_NAME}</div>
     </div>
-  </div>
-
-  <div class="body-content">
-    <p>بموجب هذا العقد، تم الاتفاق بين الطرفين التاليين:</p>
-
-    <h3>الطرف الأول — المسافر</h3>
-    <div class="grid">
-      <div class="field"><label>الاسم</label><p>${data.rider.fullName}</p></div>
-      <div class="field"><label>رقم الهاتف</label><p>${data.rider.phone}</p></div>
-    </div>
-
-    <h3>الطرف الثاني — مؤسسة أرض المشاعر للنقل البري</h3>
-    <div class="grid">
-      <div class="field"><label>اسم السائق</label><p>${data.trip.driver.fullName}</p></div>
-      <div class="field"><label>رقم الهاتف</label><p>${data.trip.driver.phone}</p></div>
-      <div class="field"><label>المركبة</label><p>${data.trip.car.brand} ${data.trip.car.model}</p></div>
-      <div class="field"><label>رقم اللوحة</label><p>${data.trip.car.plateNumber}</p></div>
-    </div>
-
-    <h3>تفاصيل الرحلة</h3>
-    <div class="grid">
-      <div class="field"><label>نقطة الانطلاق</label><p>${data.trip.origin.nameAr}</p></div>
-      <div class="field"><label>الوجهة</label><p>${data.trip.destination.nameAr}</p></div>
-      <div class="field"><label>موعد الرحلة</label><p>${data.trip.departureAt}</p></div>
-      <div class="field"><label>نوع الخدمة</label><p>${bookingLabel}</p></div>
-      <div class="field"><label>المبلغ الإجمالي</label><p>${data.totalPrice} ريال</p></div>
-      <div class="field"><label>طريقة الدفع</label><p>${paymentLabel}</p></div>
-    </div>
-
-    ${data.passengers.length > 0 ? `
-    <h3>قائمة الركاب (${data.passengers.length})</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>الاسم الكامل</th>
-          <th>الجنسية</th>
-          <th>رقم الهوية</th>
-          <th>رقم الجوال</th>
-        </tr>
-      </thead>
-      <tbody>${passengerRows}</tbody>
-    </table>` : ''}
-
-    <h3>بنود العقد</h3>
-
-    <div class="clause">
-      <strong>١. الالتزام بالموعد:</strong> يلتزم السائق بالحضور في الوقت المحدد للرحلة، وفي حال التأخير لأكثر من ٣٠ دقيقة يحق للمسافر طلب إلغاء الحجز باسترداد كامل.
-    </div>
-    <div class="clause">
-      <strong>٢. سلامة الركاب:</strong> يلتزم السائق بقواعد السلامة المرورية وأنظمة المملكة العربية السعودية طوال الرحلة.
-    </div>
-    <div class="clause">
-      <strong>٣. سياسة الإلغاء:</strong> يخضع الإلغاء لسياسة الاسترداد المعتمدة في المنصة بحسب وقت الإلغاء قبل الرحلة.
-    </div>
-    <div class="clause">
-      <strong>٤. الأمتعة:</strong> يحق للمسافر حمل حقيبة واحدة متوسطة الحجم بدون رسوم إضافية، وتُحدد الأمتعة الإضافية باتفاق مسبق مع السائق.
-    </div>
-    <div class="clause">
-      <strong>٥. المسؤولية:</strong> تعتبر مؤسسة أرض المشاعر وسيطاً وغير مسؤولة عن أي اتفاقات خارج المنصة.
+    <div class="header-left">
+      <span>نوع التشغيل: ${operationType}</span>
+      <span>رقم المرجع: ${data.referenceNumber}</span>
+      <span>تاريخ الإصدار: ${data.issuedAt}</span>
     </div>
   </div>
 
-  <div class="signatures">
-    <div class="sig-box">
-      <div class="sig-name">${data.rider.fullName}</div>
-      <div class="sig-label">توقيع المسافر</div>
-      <div class="sig-stamp-area"><span class="sig-stamp-area-label">الختم / التوقيع</span></div>
+  <!-- Title -->
+  <div class="doc-title">إبرام عقد بين الطرفين</div>
+
+  <!-- Two-column: Driver + Trip -->
+  <div class="two-col">
+    <!-- Trip info (RTL: left col appears right visually but is second in source) -->
+    <div class="col-box">
+      <div class="section-hdr">معلومات السائق</div>
+      <div class="driver-body">
+        ${driverPhotoHtml}
+        <div class="driver-row"><span class="lbl">السائق الأساسي</span><span class="val">${data.trip.driver.fullName}</span></div>
+        <div class="driver-row"><span class="lbl">رقم الهوية</span><span class="val">${data.trip.driver.idNumber || '—'}</span></div>
+        <div class="driver-row"><span class="lbl">رقم الجوال</span><span class="val">${data.trip.driver.phone || '—'}</span></div>
+        <div class="driver-row"><span class="lbl">رقم اللوحة</span><span class="val">${data.trip.car.plateNumber}</span></div>
+      </div>
     </div>
-    <div class="sig-box">
-      <div class="sig-name">مؤسسة أرض المشاعر للنقل البري</div>
-      <div class="sig-label">توقيع الطرف الثاني</div>
-      <div class="sig-stamp-area"><span class="sig-stamp-area-label">الختم / التوقيع</span></div>
+    <div class="col-box">
+      <div class="section-hdr">معلومات الرحلة</div>
+      <div class="trip-body">
+        <table class="trip-table">
+          <tr>
+            <th>من</th>
+            <th>إلى</th>
+            <th>تاريخ و وقت</th>
+            <th>المغادرة</th>
+          </tr>
+          <tr>
+            <td>${data.trip.origin.nameAr}</td>
+            <td>${data.trip.destination.nameAr}</td>
+            <td>${data.trip.departureDate}</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td></td>
+            <td></td>
+            <td>${data.trip.departureTime}</td>
+            <td></td>
+          </tr>
+        </table>
+      </div>
     </div>
   </div>
 
+  <!-- Basic passenger row -->
+  <div class="pax-basic">
+    <div class="section-hdr">معلومات الركاب</div>
+    <table class="pax-basic-table">
+      <tr>
+        <th>إسم الضيف الأساسي</th>
+        <th>رقم الجوال</th>
+        <th>عدد الركاب</th>
+      </tr>
+      <tr>
+        <td>${data.rider.fullName}</td>
+        <td>${data.rider.phone || '—'}</td>
+        <td>${data.passengerCount ?? data.passengers.length}</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Contract legal text -->
+  <div class="contract-body">
+    <p>تم إبرام هذا العقد بين المتعاقدين بناء على المادة (39) التاسعة والثلاثين من اللائحة المنظمة لنشاط النقل المتخصص وتأجير وتوجيه الحافلات، وبناء على الفقرة (1) من المادة (39) التي تنص على أن يجب على الناقل إبرام عقد نقل مع الأطراف المحددين في المادة (40) قبل تنفيذ عمليات النقل على الطرق البرية، وبما لا يخالف أحكام هذه اللائحة ووفقاً للضوابط التي تحددها هيئة النقل. وبناء على ما سبق، تم إبرام عقد النقل بين الأطراف الآتية:</p>
+    <div class="parties">
+      <div class="party-line">الطرف الأول: ${COMPANY_NAME} &nbsp;/&nbsp; س.ت ${COMPANY_CR}</div>
+      <div class="party-line">الطرف الثاني: ${data.rider.fullName}</div>
+    </div>
+    <p>اتفق الطرفان على أن ينفذ الطرف الأول عملية النقل للطرف الثاني مع مرافقيه وذويهم من الموقع المحدد مسبقاً مع الطرف الثاني وتوصيلهم إلى الوجهة المحددة في العقد.</p>
+    <p>- في حال إلغاء التعاقد لأي سبب شخصي أو أسباب أخرى تتعلق في الحجوزات أو الأنظمة، تكون سياسة الإلغاء والاستبدال حسب نظام وزارة التجارة السعودية، في حال الحجز وتم الإلغاء قبل موعد الرحلة بأكثر من 24 ساعة يتم استرداد المبلغ كاملاً.</p>
+    <p>- وفي حالة طلب الطرف الثاني الحجز من خلال الموقع الإلكتروني للمؤسسة، يعتبر هذا الحجز وموافقته على الشروط والأحكام بالموقع الإلكتروني هو موافقة على هذا العقد لتنفيذ عملية النقل المتفق عليها مع الطرف الأول بواسطة حافلات المؤسسة المرخصة والمتوافقة مع الاشتراطات المقررة من هيئة النقل.</p>
+  </div>
+
+  ${data.passengers.length > 0 ? `
+  <div class="pax-section">
+    <div class="pax-section-hdr">قائمة الركاب (${data.passengers.length})</div>
+    <table class="pax-table">
+      <tr><th>م</th><th>اسم الضيف</th><th>الجنسية</th><th>رقم الهوية / الجواز</th></tr>
+      ${passengerRows}
+    </table>
+  </div>` : ''}
+
+  <!-- Footer -->
   <div class="footer">
     <div class="footer-left">
-      <span class="footer-cr">س.ت: 4031276214 — مكة المكرمة، حي الزهراء</span>
-      <span class="footer-copy">عقد رسمي صادر عن مؤسسة أرض المشاعر للنقل البري • ${today}</span>
+      ${stampSrc ? `<img src="${stampSrc}" alt="ختم" />` : ''}
+      <div class="wa">&#x1F4F1;&nbsp;${COMPANY_WHATSAPP}</div>
     </div>
-    ${qrSrc ? `
-    <div class="footer-qr">
-      <img src="${qrSrc}" alt="رمز التحقق" />
-      <span class="footer-qr-label">رمز التحقق التجاري</span>
-    </div>` : ''}
+    <div class="footer-center">1 / 1</div>
+    <div class="footer-right">
+      ${qrSrc ? `<img src="${qrSrc}" alt="QR" />` : ''}
+    </div>
   </div>
 
+</div>
 </body>
 </html>`;
 }

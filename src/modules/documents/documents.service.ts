@@ -52,7 +52,7 @@ export class DocumentsService {
               },
             },
             car: { select: { brand: true, model: true, plateNumber: true, carType: true } },
-            driver: { include: { user: { select: { id: true, fullName: true, phone: true } } } },
+            driver: { include: { user: { select: { id: true, fullName: true, phone: true, profileImage: true } } } },
           },
         },
         passengers: true,
@@ -250,7 +250,7 @@ export class DocumentsService {
               },
             },
             car: { select: { brand: true, model: true, plateNumber: true, carType: true } },
-            driver: { include: { user: { select: { id: true, fullName: true, phone: true } } } },
+            driver: { include: { user: { select: { id: true, fullName: true, phone: true, profileImage: true } } } },
           },
         },
         passengers: true,
@@ -314,23 +314,38 @@ export class DocumentsService {
   // ─── Build HTML ───────────────────────────────────────────────────────────────
 
   protected buildHtml(docType: string, booking: any): string {
+    const now = new Date();
     const issuedAt = new Intl.DateTimeFormat('ar-SA', {
       year: 'numeric', month: 'long', day: 'numeric',
       hour: '2-digit', minute: '2-digit',
-    }).format(new Date());
+    }).format(now);
 
+    const issuedAtShort = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+
+    const depDate = new Date(booking.trip.departureAt);
     const departureAt = new Intl.DateTimeFormat('ar-SA', {
       year: 'numeric', month: 'long', day: 'numeric',
       hour: '2-digit', minute: '2-digit',
-    }).format(new Date(booking.trip.departureAt));
+    }).format(depDate);
+
+    const departureDate = `${depDate.getFullYear()}-${String(depDate.getMonth() + 1).padStart(2, '0')}-${String(depDate.getDate()).padStart(2, '0')}`;
+    const departureTime = `${String(depDate.getHours()).padStart(2, '0')} : ${String(depDate.getMinutes()).padStart(2, '0')}`;
+
+    const referenceNumber = typeof booking.bookingSerial === 'number'
+      ? String(booking.bookingSerial)
+      : booking.id.slice(0, 8).toUpperCase();
 
     const tripData = {
       departureAt,
+      departureDate,
+      departureTime,
       origin: booking.trip.route.origin,
       destination: booking.trip.route.destination,
       driver: {
         fullName: booking.trip.driver.user.fullName,
         phone: booking.trip.driver.user.phone ?? '',
+        photo: (booking.trip.driver.user.profileImage as string | null) ?? null,
+        idNumber: (booking.trip.driver.licenseNumber as string) ?? '',
       },
       car: booking.trip.car,
       bookingMode: String(booking.trip.bookingMode),
@@ -347,7 +362,8 @@ export class DocumentsService {
       }));
       return passengerManifestTemplate({
         bookingId: booking.id,
-        issuedAt,
+        referenceNumber,
+        issuedAt: issuedAtShort,
         trip: tripData,
         rider: riderData,
         passengers,
@@ -357,7 +373,8 @@ export class DocumentsService {
     if (docType === 'contract') {
       return contractTemplate({
         bookingId: booking.id,
-        issuedAt,
+        referenceNumber,
+        issuedAt: issuedAtShort,
         trip: tripData,
         rider: riderData,
         totalPrice: Number(booking.totalPrice).toFixed(2),
