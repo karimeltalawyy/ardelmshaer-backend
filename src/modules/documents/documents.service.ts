@@ -217,6 +217,53 @@ export class DocumentsService {
     }
   }
 
+  // ─── Resend manifest WhatsApp notifications ──────────────────────────────────
+
+  async notifyManifest(bookingId: string, userId: string): Promise<{ sent: boolean }> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        trip: {
+          include: {
+            route: {
+              include: {
+                origin: { select: { nameAr: true, nameEn: true } },
+                destination: { select: { nameAr: true, nameEn: true } },
+              },
+            },
+            car: { select: { brand: true, model: true, plateNumber: true, carType: true } },
+            driver: { include: { user: { select: { id: true, fullName: true, phone: true, profileImage: true } } } },
+          },
+        },
+        passengers: true,
+        rider: { select: { id: true, fullName: true, phone: true, role: true } },
+      },
+    });
+
+    if (!booking) throw new NotFoundException('Booking not found');
+    await this.assertAccess(booking, userId);
+
+    if (!booking.trip) {
+      throw new BadRequestException('This booking has no trip assigned.');
+    }
+
+    this.assertTripDataCompleteForPdf(booking);
+
+    const html = this.buildHtml('passenger_manifest', booking);
+    let filePath: string | null = null;
+    try {
+      filePath = await this.renderToPdf(html, booking.id, 'passenger_manifest');
+      await this.dispatchManifestNotifications(booking, filePath);
+      return { sent: true };
+    } finally {
+      if (filePath) {
+        try { fs.unlinkSync(filePath); } catch (e) {
+          this.logger.warn(`notifyManifest: could not delete temp PDF — ${(e as Error).message}`);
+        }
+      }
+    }
+  }
+
   // ─── List documents for a booking ────────────────────────────────────────────
 
   async findByBooking(bookingId: string, userId: string) {

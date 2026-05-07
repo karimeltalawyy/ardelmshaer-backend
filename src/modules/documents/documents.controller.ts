@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -53,6 +54,22 @@ export class DocumentsController {
   ) {
     const docType = slugToDocumentType(slug);
     return this.documentsService.generate(bookingId, user.id, docType);
+  }
+
+  @Post(':slug/notify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Resend WhatsApp notifications for a document (passenger manifest only)' })
+  @ApiParam({ name: 'slug', enum: ['passenger-manifest'] })
+  notifyBySlug(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Param('slug') slug: string,
+    @CurrentUser() user: any,
+  ) {
+    const docType = slugToDocumentType(slug);
+    if (docType !== 'passenger_manifest') {
+      throw new BadRequestException('WhatsApp notification is only available for passenger-manifest');
+    }
+    return this.documentsService.notifyManifest(bookingId, user.id);
   }
 
   @Get(':slug/html')
