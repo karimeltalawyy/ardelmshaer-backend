@@ -2,7 +2,6 @@ import {
   ArrayMinSize,
   IsArray,
   IsDateString,
-  IsEnum,
   IsInt,
   IsNumber,
   IsOptional,
@@ -15,14 +14,8 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PassengerDto } from '../../bookings/dto/passenger.dto';
-import { OperationType } from './create-driver-booking.dto';
 
 export class CreateAdminDriverBookingDto {
-  @ApiPropertyOptional({ enum: OperationType, description: 'Trip operation type (مغادرة/تشغيل)' })
-  @IsOptional()
-  @IsEnum(OperationType)
-  operationType?: OperationType;
-
   @ApiProperty({ description: 'Selected car UUID. Driver is derived from the car assignment.' })
   @IsUUID()
   carId: string;
@@ -61,7 +54,7 @@ export class CreateAdminDriverBookingDto {
   @Type(() => PassengerDto)
   passengers: PassengerDto[];
 
-  @ApiPropertyOptional({ enum: ['cash', 'card', 'mada'], default: 'cash' })
+  @ApiPropertyOptional({ default: 'cash' })
   @IsOptional()
   @IsString()
   paymentMethod?: string;
