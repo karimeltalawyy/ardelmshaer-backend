@@ -9,6 +9,7 @@ type WhatsappProvider = 'meta' | 'twilio';
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
   private readonly provider: WhatsappProvider;
+  private readonly enabled: boolean;
 
   private readonly client: Twilio | null = null;
   private readonly from: string;
@@ -19,6 +20,7 @@ export class WhatsappService {
 
   constructor(private config: ConfigService) {
     this.provider = (this.config.get<string>('WHATSAPP_PROVIDER') ?? 'meta') as WhatsappProvider;
+    this.enabled = this.config.get<string>('WHATSAPP_NOTIFICATIONS_ENABLED') !== 'false';
     this.adminNumber = this.config.get<string>('ADMIN_WHATSAPP_NUMBER') ?? '';
 
     this.metaToken = this.config.get<string>('META_WHATSAPP_ACCESS_TOKEN') ?? '';
@@ -31,6 +33,11 @@ export class WhatsappService {
 
     if (accountSid && authToken) {
       this.client = new Twilio(accountSid, authToken);
+    }
+
+    if (!this.enabled) {
+      this.logger.warn('WhatsApp notifications disabled — set WHATSAPP_NOTIFICATIONS_ENABLED=true to enable');
+      return;
     }
 
     if (this.provider === 'meta') {
@@ -123,6 +130,7 @@ export class WhatsappService {
   }
 
   async sendText(to: string, body: string): Promise<void> {
+    if (!this.enabled) return;
     if (this.provider === 'meta') {
       const toFormatted = this.formatMetaTo(to);
       await this.sendMetaMessage({
@@ -156,6 +164,7 @@ export class WhatsappService {
   }
 
   async sendDocument(to: string, pdfBuffer: Buffer, filename: string, caption: string): Promise<void> {
+    if (!this.enabled) return;
     if (this.provider === 'meta') {
       const mediaUrl = await this.uploadPdfToCloudinary(pdfBuffer, filename);
       await this.sendMetaMessage({
@@ -213,6 +222,7 @@ export class WhatsappService {
     passengerCount: number;
     passengers: Array<{ fullName: string; idNumber: string; nationality: string; phone: string }>;
   }): Promise<void> {
+    if (!this.enabled) return;
     if (!this.adminNumber) {
       this.logger.warn('notifyAdminBookingRequest skipped — ADMIN_WHATSAPP_NUMBER not set');
       return;
@@ -270,6 +280,7 @@ export class WhatsappService {
     passengerCount: number;
     pdfBuffer: Buffer;
   }): Promise<void> {
+    if (!this.enabled) return;
     if (!this.adminNumber) {
       this.logger.warn('notifyAdminWithManifest skipped — ADMIN_WHATSAPP_NUMBER not set');
       return;
@@ -324,6 +335,7 @@ export class WhatsappService {
     departureAt: Date;
     pdfBuffer: Buffer;
   }): Promise<void> {
+    if (!this.enabled) return;
     const dateStr = new Intl.DateTimeFormat('ar-SA', {
       year: 'numeric', month: 'long', day: 'numeric',
       hour: '2-digit', minute: '2-digit',
@@ -373,6 +385,7 @@ export class WhatsappService {
     departureAt: Date;
     pickupAddress: string;
   }): Promise<void> {
+    if (!this.enabled) return;
     const dateStr = new Intl.DateTimeFormat('ar-SA', {
       year: 'numeric', month: 'long', day: 'numeric',
       hour: '2-digit', minute: '2-digit',
