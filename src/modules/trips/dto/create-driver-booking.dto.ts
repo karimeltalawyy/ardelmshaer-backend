@@ -1,6 +1,5 @@
 import {
   IsArray,
-  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -15,16 +14,11 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PassengerDto } from '../../bookings/dto/passenger.dto';
 
-export enum OperationType {
-  DEPARTURE = 'departure',
-  OPERATION = 'operation',
-}
-
 export class CreateDriverBookingDto {
-  @ApiPropertyOptional({ enum: OperationType, description: 'Trip operation type (مغادرة/تشغيل)' })
+  @ApiPropertyOptional({ description: 'Trip operation type (departure / reception / special_destinations)' })
   @IsOptional()
-  @IsEnum(OperationType)
-  operationType?: OperationType;
+  @IsString()
+  operationType?: string;
 
   @ApiProperty({ description: 'Origin destination UUID' })
   @IsUUID()
