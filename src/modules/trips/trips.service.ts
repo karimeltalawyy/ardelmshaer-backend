@@ -297,11 +297,15 @@ export class TripsService {
     const car = driver.cars[0];
     if (!car) throw new BadRequestException('No active car assigned to this driver');
 
-    // 2. Find route by originId + destinationId (isActive not required — drivers may issue manifests on any configured route)
-    const route = await this.prisma.route.findFirst({
+    // 2. Find or auto-create route — drivers may issue manifests for any origin/destination pair
+    let route = await this.prisma.route.findFirst({
       where: { originId: dto.originId, destinationId: dto.destinationId },
     });
-    if (!route) throw new NotFoundException('لا يوجد مسار مسجّل بين الوجهتين المحددتين');
+    if (!route) {
+      route = await this.prisma.route.create({
+        data: { originId: dto.originId, destinationId: dto.destinationId, estimatedDurationMin: 0 },
+      });
+    }
 
     // 3. Calculate price
     const priceData = await calculatePrice(this.prisma, route.id, car.carType);
