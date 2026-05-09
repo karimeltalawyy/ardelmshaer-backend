@@ -3,3 +3,9 @@ dist
 .env
 *.log
 uploads
+coverage
+docs
+*.md
+.git
+.gitignore
+nixpacks.toml
