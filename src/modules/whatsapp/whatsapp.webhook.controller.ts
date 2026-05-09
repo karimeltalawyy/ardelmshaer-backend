@@ -34,11 +34,19 @@ interface MetaMessage {
   location?: { latitude?: number; longitude?: number; name?: string; address?: string };
 }
 
+interface MetaStatusError {
+  code?: number;
+  title?: string;
+  message?: string;
+  error_data?: { details?: string };
+}
+
 interface MetaStatus {
   id?: string;
   status?: string;
   timestamp?: string;
   recipient_id?: string;
+  errors?: MetaStatusError[];
 }
 
 interface MetaWebhookPayload {
@@ -188,13 +196,20 @@ export class WhatsappWebhookController {
     }
   }
 
-  private processStatuses(
-    statuses: MetaStatus[],
-  ): void {
+  private processStatuses(statuses: MetaStatus[]): void {
     for (const status of statuses) {
-      this.logger.log(
-        `📬 Delivery status — msgId=${status.id} to=${status.recipient_id} status=${status.status}`,
-      );
+      if (status.status === 'failed' && status.errors?.length) {
+        for (const err of status.errors) {
+          this.logger.error(
+            `📬 Delivery FAILED — msgId=${status.id} to=${status.recipient_id} ` +
+            `code=${err.code} title="${err.title}" message="${err.message}" details="${err.error_data?.details ?? ''}"`,
+          );
+        }
+      } else {
+        this.logger.log(
+          `📬 Delivery status — msgId=${status.id} to=${status.recipient_id} status=${status.status}`,
+        );
+      }
     }
   }
 }
