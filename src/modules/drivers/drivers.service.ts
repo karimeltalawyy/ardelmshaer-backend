@@ -231,9 +231,9 @@ export class DriversService {
       issuedAt: d.issuedAt,
       bookingId: d.bookingId,
       trip: {
-        origin: d.booking.trip.route.origin.nameAr,
-        destination: d.booking.trip.route.destination.nameAr,
-        departureAt: d.booking.trip.departureAt,
+        origin: d.booking.trip?.route?.origin?.nameAr ?? '',
+        destination: d.booking.trip?.route?.destination?.nameAr ?? '',
+        departureAt: d.booking.trip?.departureAt?.toISOString() ?? '',
       },
     }));
   }
