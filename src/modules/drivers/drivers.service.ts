@@ -187,4 +187,54 @@ export class DriversService {
       });
     }
   }
+
+  // ─── Driver booking documents ─────────────────────────────────────────────────
+
+  async getMyBookingDocuments(userId: string) {
+    const profile = await this.prisma.driverProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!profile) return [];
+
+    const docs = await this.prisma.document.findMany({
+      where: {
+        booking: {
+          trip: { driverId: profile.id },
+        },
+      },
+      include: {
+        booking: {
+          select: {
+            id: true,
+            trip: {
+              select: {
+                departureAt: true,
+                route: {
+                  select: {
+                    origin: { select: { nameAr: true } },
+                    destination: { select: { nameAr: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { issuedAt: 'desc' },
+    });
+
+    return docs.map((d) => ({
+      id: d.id,
+      type: d.type,
+      fileUrl: d.fileUrl,
+      issuedAt: d.issuedAt,
+      bookingId: d.bookingId,
+      trip: {
+        origin: d.booking.trip.route.origin.nameAr,
+        destination: d.booking.trip.route.destination.nameAr,
+        departureAt: d.booking.trip.departureAt,
+      },
+    }));
+  }
 }

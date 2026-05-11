@@ -52,6 +52,12 @@ export class DriversController {
     return this.driversService.getMyProfile(user.id);
   }
 
+  @Get('me/booking-documents')
+  @ApiOperation({ summary: 'List all generated PDF documents for this driver across all bookings' })
+  getMyBookingDocuments(@CurrentUser() user: any) {
+    return this.driversService.getMyBookingDocuments(user.id);
+  }
+
   @Post('documents')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   @ApiOperation({ summary: 'Upload a driver document (national_id, license, car_registration, car_photo)' })
