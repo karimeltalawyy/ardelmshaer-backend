@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 function isTemplateDatabaseUrl(url?: string): boolean {
@@ -34,6 +34,8 @@ export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
+  private readonly logger = new Logger(PrismaService.name);
+
   constructor() {
     super({
       datasources: {
@@ -45,7 +47,21 @@ export class PrismaService
   }
 
   async onModuleInit() {
-    await this.$connect();
+    const maxRetries = 6;
+    const baseDelayMs = 3000;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.$connect();
+        return;
+      } catch (err) {
+        if (attempt === maxRetries) throw err;
+        const delay = baseDelayMs * attempt;
+        this.logger.warn(
+          `DB connect attempt ${attempt}/${maxRetries} failed — retrying in ${delay}ms (Neon cold start?)`,
+        );
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
   }
 
   async onModuleDestroy() {
