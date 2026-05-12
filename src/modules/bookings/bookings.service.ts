@@ -364,10 +364,6 @@ export class BookingsService {
     if (dto.passengerCount !== dto.passengers.length) {
       throw new BadRequestException('عدد المسافرين لا يتطابق مع البيانات المُدخلة');
     }
-    if (dto.originId === dto.destinationId) {
-      throw new BadRequestException('نقطة الانطلاق والوجهة لا يمكن أن تكونا متطابقتين');
-    }
-
     const [origin, destination] = await Promise.all([
       this.prisma.destination.findUnique({ where: { id: dto.originId } }),
       this.prisma.destination.findUnique({ where: { id: dto.destinationId } }),

@@ -15,10 +15,6 @@ export class RoutesService {
   constructor(private prisma: PrismaService) {}
 
   async create(dto: CreateRouteDto) {
-    if (dto.originId === dto.destinationId) {
-      throw new BadRequestException('Origin and destination must be different');
-    }
-
     const existing = await this.prisma.route.findUnique({
       where: {
         originId_destinationId: {
@@ -75,10 +71,6 @@ export class RoutesService {
 
   async update(id: string, dto: UpdateRouteDto) {
     await this.findOne(id);
-
-    if (dto.originId && dto.destinationId && dto.originId === dto.destinationId) {
-      throw new BadRequestException('Origin and destination must be different');
-    }
 
     return this.prisma.route.update({
       where: { id },
