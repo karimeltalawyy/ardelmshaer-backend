@@ -72,7 +72,7 @@ export class DocumentsService {
     this.assertTripDataCompleteForPdf(booking);
     await this.enforceGenerationPolicy(bookingId, booking.trip!, docType);
 
-    const html = this.buildHtml(docType, booking);
+    const html = await this.buildHtml(docType, booking);
     const pdfBuffer = await this.renderToPdf(html);
 
     const filename = `${docType}-${bookingId}-${Date.now()}.pdf`;
@@ -251,7 +251,7 @@ export class DocumentsService {
 
     this.assertTripDataCompleteForPdf(booking);
 
-    const html = this.buildHtml('passenger_manifest', booking);
+    const html = await this.buildHtml('passenger_manifest', booking);
     const pdfBuffer = await this.renderToPdf(html);
     return this.dispatchManifestNotifications(booking, pdfBuffer);
   }
@@ -350,9 +350,21 @@ export class DocumentsService {
     return { fullName, phone };
   }
 
+  private async fetchImageAsDataUri(url: string): Promise<string | null> {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const contentType = response.headers.get('content-type') || 'image/jpeg';
+      const buffer = await response.arrayBuffer();
+      return `data:${contentType};base64,${Buffer.from(buffer).toString('base64')}`;
+    } catch {
+      return null;
+    }
+  }
+
   // ─── Build HTML ───────────────────────────────────────────────────────────────
 
-  protected buildHtml(docType: DocumentType, booking: any): string {
+  protected async buildHtml(docType: DocumentType, booking: any): Promise<string> {
     const now = new Date();
     const issuedAtShort = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
 
@@ -369,6 +381,9 @@ export class DocumentsService {
       ? String(booking.bookingSerial)
       : booking.id.slice(0, 8).toUpperCase();
 
+    const rawPhotoUrl = (booking.trip.driver.user.profileImage as string | null) ?? null;
+    const driverPhoto = rawPhotoUrl ? await this.fetchImageAsDataUri(rawPhotoUrl) : null;
+
     const tripData = {
       departureAt,
       departureDate,
@@ -378,7 +393,7 @@ export class DocumentsService {
       driver: {
         fullName: booking.trip.driver.user.fullName,
         phone: booking.trip.driver.user.phone ?? '',
-        photo: (booking.trip.driver.user.profileImage as string | null) ?? null,
+        photo: driverPhoto,
         idNumber: (booking.trip.driver.licenseNumber as string) ?? '',
       },
       car: booking.trip.car,
