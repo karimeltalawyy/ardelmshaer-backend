@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "openssl", "chromium", "nss", "nspr", "at-spi2-atk", "xorg.libxcb", "libxkbcommon", "glib"]
+nixPkgs = ["nodejs_20", "openssl", "chromium", "nss", "nspr", "at-spi2-atk", "xorg.libxcb", "libxkbcommon", "glib", "noto-fonts", "noto-fonts-arabic", "dejavu_fonts"]
 
 [variables]
 CHROMIUM_PATH = "/run/current-system/sw/bin/chromium"
