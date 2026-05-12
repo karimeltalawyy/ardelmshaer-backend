@@ -17,7 +17,7 @@ import {
   ApiBearerAuth,
   ApiParam,
 } from '@nestjs/swagger';
-import { DocumentsService, slugToDocumentType } from './documents.service';
+import { DocumentsService, DocumentType, slugToDocumentType } from './documents.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -40,10 +40,10 @@ export class DocumentsController {
   /** Accepts `{}` — matches transport-frontend admin document generation. */
   @Post(':slug')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Generate or return a booking PDF document (manifest, contract, receipt)' })
+  @ApiOperation({ summary: 'Generate and upload a booking PDF document (manifest or contract)' })
   @ApiParam({
     name: 'slug',
-    enum: ['passenger-manifest', 'contract', 'payment-receipt'],
+    enum: ['passenger-manifest', 'contract'],
     description: 'Document type slug (hyphen form in URL; stored type uses underscores)',
   })
   generateBySlug(
@@ -52,7 +52,7 @@ export class DocumentsController {
     @CurrentUser() user: any,
     @Body() _body?: Record<string, unknown>,
   ) {
-    const docType = slugToDocumentType(slug);
+    const docType: DocumentType = slugToDocumentType(slug);
     return this.documentsService.generate(bookingId, user.id, docType);
   }
 
@@ -77,7 +77,7 @@ export class DocumentsController {
   @ApiOperation({ summary: 'Return the raw HTML for a booking document (for browser print)' })
   @ApiParam({
     name: 'slug',
-    enum: ['passenger-manifest', 'contract', 'payment-receipt'],
+    enum: ['passenger-manifest', 'contract'],
   })
   getHtmlBySlug(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,

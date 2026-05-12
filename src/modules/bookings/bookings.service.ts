@@ -58,11 +58,7 @@ export class BookingsService {
   ) {}
 
   private async generateDefaultDocuments(bookingId: string, userId: string): Promise<void> {
-    const docs: Array<'passenger_manifest' | 'contract' | 'payment_receipt'> = [
-      'passenger_manifest',
-      'contract',
-      'payment_receipt',
-    ];
+    const docs: Array<'passenger_manifest' | 'contract'> = ['passenger_manifest', 'contract'];
     const tasks = docs.map((docType) =>
       this.documentsService.generate(bookingId, userId, docType),
     );

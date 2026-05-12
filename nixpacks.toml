@@ -1,5 +1,8 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "openssl"]
+nixPkgs = ["nodejs_20", "openssl", "chromium", "nss", "nspr", "at-spi2-atk", "xorg.libxcb", "libxkbcommon", "glib"]
+
+[variables]
+CHROMIUM_PATH = "/run/current-system/sw/bin/chromium"
 
 [phases.build]
 cmds = ["npm ci", "npx prisma generate", "npm run build"]

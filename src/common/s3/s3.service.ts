@@ -63,6 +63,12 @@ export class S3Service {
     return this.saveLocally(folder, filename, file);
   }
 
+  async uploadBuffer(folder: string, buffer: Buffer, filename: string, mimetype: string): Promise<string> {
+    if (this.mode === 'cloudinary') return this.uploadBufferToCloudinary(folder, buffer, filename, mimetype);
+    if (this.mode === 's3') return this.uploadBufferToS3(folder, filename, buffer, mimetype);
+    return this.saveBufferLocally(folder, filename, buffer);
+  }
+
   async delete(fileUrl: string): Promise<void> {
     if (this.mode === 'cloudinary') return this.deleteFromCloudinary(fileUrl);
     if (this.mode === 's3') return this.deleteFromS3(fileUrl);
@@ -165,5 +171,52 @@ export class S3Service {
     } catch {
       // File may not exist — ignore
     }
+  }
+
+  // ─── Buffer upload variants (for in-memory files such as generated PDFs) ──────
+
+  private uploadBufferToCloudinary(folder: string, buffer: Buffer, filename: string, mimetype: string): Promise<string> {
+    const resourceType = mimetype === 'application/pdf' ? 'raw' : 'auto';
+    return new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder, public_id: `${folder}/${filename.replace(/\.[^.]+$/, '')}`, resource_type: resourceType as any },
+        (error, result) => {
+          if (error || !result) {
+            return reject(
+              new InternalServerErrorException(
+                `Cloudinary upload failed: ${error?.message ?? 'unknown error'}`,
+              ),
+            );
+          }
+          resolve(result.secure_url);
+        },
+      );
+      stream.end(buffer);
+    });
+  }
+
+  private async uploadBufferToS3(folder: string, filename: string, buffer: Buffer, mimetype: string): Promise<string> {
+    const key = `${folder}/${filename}`;
+    try {
+      await this.s3!.send(
+        new PutObjectCommand({
+          Bucket: process.env.AWS_S3_BUCKET,
+          Key: key,
+          Body: buffer,
+          ContentType: mimetype,
+        }),
+      );
+    } catch (err) {
+      throw new InternalServerErrorException(`S3 upload failed: ${(err as Error).message}`);
+    }
+    return `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+  }
+
+  private saveBufferLocally(folder: string, filename: string, buffer: Buffer): string {
+    const dir = path.join(this.uploadsDir, folder);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, filename), buffer);
+    const port = process.env.PORT ?? 3000;
+    return `http://localhost:${port}/uploads/${folder}/${filename}`;
   }
 }

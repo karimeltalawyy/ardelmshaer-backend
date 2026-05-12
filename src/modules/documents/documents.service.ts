@@ -9,21 +9,20 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as puppeteer from 'puppeteer';
-import * as path from 'path';
-import * as fs from 'fs';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { S3Service } from '../../common/s3/s3.service';
 import { passengerManifestTemplate } from './templates/passenger-manifest.template';
 import { contractTemplate } from './templates/contract.template';
-import { paymentReceiptTemplate } from './templates/payment-receipt.template';
 
-export function slugToDocumentType(slug: string): 'passenger_manifest' | 'contract' | 'payment_receipt' {
+export type DocumentType = 'passenger_manifest' | 'contract';
+
+export function slugToDocumentType(slug: string): DocumentType {
   const normalized = String(slug).trim().toLowerCase();
   if (normalized === 'passenger-manifest') return 'passenger_manifest';
   if (normalized === 'contract') return 'contract';
-  if (normalized === 'payment-receipt') return 'payment_receipt';
   throw new BadRequestException(
-    `Unsupported document slug "${slug}". Use passenger-manifest, contract, or payment-receipt.`,
+    `Unsupported document slug "${slug}". Use passenger-manifest or contract.`,
   );
 }
 
@@ -35,11 +34,12 @@ export class DocumentsService {
     private prisma: PrismaService,
     private config: ConfigService,
     private whatsapp: WhatsappService,
+    private s3: S3Service,
   ) {}
 
   // ─── Generate & store document ────────────────────────────────────────────────
 
-  async generate(bookingId: string, userId: string, docType: 'passenger_manifest' | 'contract' | 'payment_receipt') {
+  async generate(bookingId: string, userId: string, docType: DocumentType) {
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
       include: {
@@ -65,26 +65,27 @@ export class DocumentsService {
 
     if (!booking.trip) {
       throw new BadRequestException(
-        'This booking has no trip assigned (tripId is null). Link a trip to this booking in admin before generating PDFs. Other passengers on a trip do not auto-link this booking.',
+        'This booking has no trip assigned (tripId is null). Link a trip to this booking in admin before generating PDFs.',
       );
     }
 
     this.assertTripDataCompleteForPdf(booking);
-
     await this.enforceGenerationPolicy(bookingId, booking.trip!, docType);
 
-    const existingReceipt =
-      docType === 'payment_receipt'
-        ? await this.prisma.document.findFirst({ where: { bookingId, type: docType } })
-        : null;
-    if (existingReceipt) return existingReceipt;
+    const html = this.buildHtml(docType, booking);
+    const pdfBuffer = await this.renderToPdf(html);
+
+    const filename = `${docType}-${bookingId}-${Date.now()}.pdf`;
+    const fileUrl = await this.s3.uploadBuffer('documents', pdfBuffer, filename, 'application/pdf');
 
     const document = await this.prisma.document.create({
-      data: { bookingId, type: docType, fileUrl: null },
+      data: { bookingId, type: docType, fileUrl },
     });
 
     if (docType === 'passenger_manifest') {
-      this.dispatchManifestWithPdf(booking).catch(() => {});
+      this.dispatchManifestNotifications(booking, pdfBuffer).catch((err) => {
+        this.logger.warn(`manifest WhatsApp dispatch failed for booking ${bookingId}: ${(err as Error).message}`);
+      });
     }
 
     return document;
@@ -92,7 +93,7 @@ export class DocumentsService {
 
   private async dispatchManifestNotifications(
     booking: any,
-    filePath: string,
+    pdfBuffer: Buffer,
   ): Promise<{ driverSent: boolean; driverError: string | null; adminSent: boolean; adminError: string | null }> {
     const reference = booking.bookingSerial
       ? `AMS-${String(booking.bookingSerial).padStart(6, '0')}`
@@ -104,15 +105,6 @@ export class DocumentsService {
     const passengerCount: number = Array.isArray(booking.passengers)
       ? booking.passengers.length
       : booking.seatCount ?? 0;
-
-    let pdfBuffer: Buffer;
-    try {
-      pdfBuffer = fs.readFileSync(filePath);
-    } catch (e) {
-      const msg = `Could not read PDF file — ${(e as Error).message}`;
-      this.logger.warn(`dispatchManifestNotifications: ${msg}`);
-      return { driverSent: false, driverError: msg, adminSent: false, adminError: msg };
-    }
 
     const riderData = this.resolveRiderDataForPdf(booking);
     const driverPhone: string = booking.trip?.driver?.user?.phone ?? '';
@@ -163,26 +155,6 @@ export class DocumentsService {
     return { driverSent, driverError, adminSent, adminError };
   }
 
-  private async dispatchManifestWithPdf(booking: any): Promise<void> {
-    const html = this.buildHtml('passenger_manifest', booking);
-    let filePath: string | null = null;
-    try {
-      filePath = await this.renderToPdf(html, booking.id, 'passenger_manifest');
-      const result = await this.dispatchManifestNotifications(booking, filePath);
-      if (!result.driverSent || !result.adminSent) {
-        this.logger.warn(
-          `dispatchManifestWithPdf: partial send — driver=${result.driverSent ? 'ok' : result.driverError} admin=${result.adminSent ? 'ok' : result.adminError}`,
-        );
-      }
-    } finally {
-      if (filePath) {
-        try { fs.unlinkSync(filePath); } catch (e) {
-          this.logger.warn(`dispatchManifestWithPdf: could not delete temp PDF ${filePath} — ${(e as Error).message}`);
-        }
-      }
-    }
-  }
-
   /** Avoid 500s from null route/driver/car; message helps ops fix data. */
   private assertTripDataCompleteForPdf(booking: any): void {
     const t = booking.trip;
@@ -204,7 +176,7 @@ export class DocumentsService {
   private async enforceGenerationPolicy(
     bookingId: string,
     trip: { status: string },
-    docType: 'passenger_manifest' | 'contract' | 'payment_receipt',
+    docType: DocumentType,
   ): Promise<void> {
     if (docType === 'contract') {
       const { status } = trip;
@@ -212,19 +184,16 @@ export class DocumentsService {
         throw new BadRequestException('Cannot generate contract for a cancelled trip');
       }
       const count = await this.prisma.document.count({ where: { bookingId, type: 'contract' } });
-      // After completion: only one final contract is allowed.
       if (status === 'completed' && count >= 1) {
         throw new ConflictException('Transport contract has already been issued for this completed booking');
       }
-      // While active: allow up to 3 re-generations (driver may update passenger list on the road).
       if (count >= 3) {
         throw new BadRequestException('Maximum of 3 contract generations reached for this booking');
       }
       return;
     }
 
-    if (docType !== 'passenger_manifest') return;
-
+    // passenger_manifest
     const { status } = trip;
     if (status === 'cancelled') {
       throw new BadRequestException('Cannot generate passenger manifest when the trip is cancelled');
@@ -283,17 +252,8 @@ export class DocumentsService {
     this.assertTripDataCompleteForPdf(booking);
 
     const html = this.buildHtml('passenger_manifest', booking);
-    let filePath: string | null = null;
-    try {
-      filePath = await this.renderToPdf(html, booking.id, 'passenger_manifest');
-      return await this.dispatchManifestNotifications(booking, filePath);
-    } finally {
-      if (filePath) {
-        try { fs.unlinkSync(filePath); } catch (e) {
-          this.logger.warn(`notifyManifest: could not delete temp PDF — ${(e as Error).message}`);
-        }
-      }
-    }
+    const pdfBuffer = await this.renderToPdf(html);
+    return this.dispatchManifestNotifications(booking, pdfBuffer);
   }
 
   // ─── List documents for a booking ────────────────────────────────────────────
@@ -316,7 +276,7 @@ export class DocumentsService {
     return this.prisma.document.findMany({ where: { bookingId } });
   }
 
-  async getHtml(bookingId: string, userId: string, docType: 'passenger_manifest' | 'contract' | 'payment_receipt'): Promise<string> {
+  async getHtml(bookingId: string, userId: string, docType: DocumentType): Promise<string> {
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
       include: {
@@ -365,7 +325,7 @@ export class DocumentsService {
     }
   }
 
-  /** Guest bookings may have no linked rider user — use booking fields + passengers. No signup required. */
+  /** Guest bookings may have no linked rider user — use booking fields + passengers. */
   private resolveRiderDataForPdf(booking: any): { fullName: string; phone: string } {
     const p0 =
       Array.isArray(booking.passengers) && booking.passengers.length > 0
@@ -392,13 +352,8 @@ export class DocumentsService {
 
   // ─── Build HTML ───────────────────────────────────────────────────────────────
 
-  protected buildHtml(docType: string, booking: any): string {
+  protected buildHtml(docType: DocumentType, booking: any): string {
     const now = new Date();
-    const issuedAt = new Intl.DateTimeFormat('ar-SA', {
-      year: 'numeric', month: 'long', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    }).format(now);
-
     const issuedAtShort = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
 
     const depDate = new Date(booking.trip.departureAt);
@@ -449,52 +404,28 @@ export class DocumentsService {
       });
     }
 
-    if (docType === 'contract') {
-      return contractTemplate({
-        bookingId: booking.id,
-        referenceNumber,
-        issuedAt: issuedAtShort,
-        trip: tripData,
-        rider: riderData,
-        totalPrice: Number(booking.totalPrice).toFixed(2),
-        paymentMethod: booking.paymentMethod,
-        passengerCount: booking.seatCount,
-        passengers: booking.passengers.map((p: any) => ({
-          fullName: p.fullName,
-          nationality: p.nationality,
-          idNumber: p.idNumber,
-          phone: p.phone ?? '',
-        })),
-      });
-    }
-
-    // payment_receipt
-    return paymentReceiptTemplate({
+    // contract
+    return contractTemplate({
       bookingId: booking.id,
-      issuedAt,
+      referenceNumber,
+      issuedAt: issuedAtShort,
       trip: tripData,
       rider: riderData,
-      basePrice: Number(booking.basePrice).toFixed(2),
-      seasonMultiplier: Number(booking.seasonMultiplier).toFixed(2),
-      platformFee: Number(booking.platformFee).toFixed(2),
-      driverPayout: Number(booking.driverPayout).toFixed(2),
       totalPrice: Number(booking.totalPrice).toFixed(2),
       paymentMethod: booking.paymentMethod,
-      paymentStatus: booking.paymentStatus,
       passengerCount: booking.seatCount,
+      passengers: booking.passengers.map((p: any) => ({
+        fullName: p.fullName,
+        nationality: p.nationality,
+        idNumber: p.idNumber,
+        phone: p.phone ?? '',
+      })),
     });
   }
 
-  // ─── Render HTML → PDF ────────────────────────────────────────────────────────
+  // ─── Render HTML → PDF Buffer ─────────────────────────────────────────────────
 
-  private async renderToPdf(html: string, bookingId: string, docType: string): Promise<string> {
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'documents');
-    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-    const uniq = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 11)}`;
-    const fileName = `${docType}-${bookingId}-${uniq}.pdf`;
-    const filePath = path.join(uploadsDir, fileName);
-
+  private async renderToPdf(html: string): Promise<Buffer> {
     const chromiumPath = this.config.get<string>('CHROMIUM_PATH') || process.env.CHROMIUM_PATH;
 
     let browser: puppeteer.Browser | undefined;
@@ -505,12 +436,7 @@ export class DocumentsService {
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
       });
       const page = await browser.newPage();
-      await page.setContent(html, {
-        waitUntil: 'domcontentloaded',
-        timeout: 60_000,
-      });
-      // Wait for Google Fonts (@import Cairo) to finish loading so Arabic glyphs render correctly.
-      // Uses a 6-second hard cap so a network hiccup cannot stall generation indefinitely.
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 60_000 });
       await page.evaluate(
         () =>
           Promise.race([
@@ -518,23 +444,18 @@ export class DocumentsService {
             new Promise<void>((resolve) => setTimeout(resolve, 6000)),
           ]),
       );
-      await page.pdf({
-        path: filePath,
+      const pdf = await page.pdf({
         format: 'A4',
         printBackground: true,
         margin: { top: '12mm', bottom: '12mm', left: '12mm', right: '12mm' },
       });
+      return Buffer.from(pdf);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        `PDF render failed bookingId=${bookingId} docType=${docType} file=${fileName}: ${message}`,
-        err instanceof Error ? err.stack : undefined,
-      );
+      this.logger.error(`PDF render failed: ${message}`, err instanceof Error ? err.stack : undefined);
       throw new InternalServerErrorException(`PDF generation failed: ${message}`);
     } finally {
       await browser?.close();
     }
-
-    return filePath;
   }
 }
