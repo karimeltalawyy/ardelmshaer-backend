@@ -51,9 +51,7 @@ export class DestinationsController {
   }
 
   @Post('suggest')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Suggest a new destination (any authenticated user)' })
+  @ApiOperation({ summary: 'Suggest a new destination (public — no auth required)' })
   suggest(@Body() dto: SuggestDestinationDto) {
     return this.destinationsService.suggest(dto.nameAr);
   }
