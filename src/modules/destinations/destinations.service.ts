@@ -10,12 +10,8 @@ export class DestinationsService {
 
   async suggest(nameAr: string) {
     const name = nameAr.trim();
-    const existing = await this.prisma.destination.findFirst({
-      where: { nameAr: { equals: name, mode: 'insensitive' } },
-    });
-    if (existing) return existing;
     return this.prisma.destination.create({
-      data: { nameAr: name, nameEn: name, type: 'city', region: 'غير محدد', sortOrder: 99 },
+      data: { nameAr: name, nameEn: name, type: 'city', region: 'غير محدد', sortOrder: 99, isActive: false },
     });
   }
 
