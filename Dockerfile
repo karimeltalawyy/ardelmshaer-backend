@@ -17,8 +17,7 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     openssl \
     chromium \
     fonts-liberation \
-    fonts-noto \
-    fonts-noto-arabic \
+    fonts-noto-core \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
