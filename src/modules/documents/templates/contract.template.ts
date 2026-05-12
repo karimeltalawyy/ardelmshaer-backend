@@ -30,12 +30,14 @@ export function contractTemplate(data: {
 
   const driverPhotoHtml = data.trip.driver.photo
     ? `<img src="${data.trip.driver.photo}" class="driver-photo" alt="صورة السائق" />`
-    : `<div class="driver-photo driver-photo--placeholder"><span>لا&nbsp;صورة</span></div>`;
+    : `<div class="driver-photo driver-photo--placeholder"><span>لا صورة</span></div>`;
+
+  const primaryPassenger = data.passengers.length > 0 ? data.passengers[0] : null;
 
   const passengerRows = data.passengers
     .map(
       (p, i) =>
-        `<tr><td class="tc">${i + 1}</td><td>${p.fullName}</td><td>${p.nationality || '—'}</td><td>${p.idNumber || '—'}</td></tr>`,
+        `<tr><td class="tc">${i + 1}</td><td>${p.fullName}</td><td>${p.nationality || '—'}</td><td>${p.idNumber || '—'}</td><td>${p.phone || '—'}</td></tr>`,
     )
     .join('');
 
@@ -200,8 +202,8 @@ export function contractTemplate(data: {
         <th>عدد الركاب</th>
       </tr>
       <tr>
-        <td>${data.rider.fullName}</td>
-        <td>${data.rider.phone || '—'}</td>
+        <td>${primaryPassenger?.fullName || data.rider.fullName}</td>
+        <td>${primaryPassenger?.phone || data.rider.phone || '—'}</td>
         <td>${data.passengerCount ?? data.passengers.length}</td>
       </tr>
     </table>
