@@ -20,6 +20,7 @@ import { DestinationType } from '@prisma/client';
 import { DestinationsService } from './destinations.service';
 import { CreateDestinationDto } from './dto/create-destination.dto';
 import { UpdateDestinationDto } from './dto/update-destination.dto';
+import { SuggestDestinationDto } from './dto/suggest-destination.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -47,6 +48,14 @@ export class DestinationsController {
   @ApiOperation({ summary: 'Get a destination by ID' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.destinationsService.findOne(id);
+  }
+
+  @Post('suggest')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Suggest a new destination (any authenticated user)' })
+  suggest(@Body() dto: SuggestDestinationDto) {
+    return this.destinationsService.suggest(dto.nameAr);
   }
 
   @Post()

@@ -8,6 +8,17 @@ import { DestinationType } from '@prisma/client';
 export class DestinationsService {
   constructor(private prisma: PrismaService) {}
 
+  async suggest(nameAr: string) {
+    const name = nameAr.trim();
+    const existing = await this.prisma.destination.findFirst({
+      where: { nameAr: { equals: name, mode: 'insensitive' } },
+    });
+    if (existing) return existing;
+    return this.prisma.destination.create({
+      data: { nameAr: name, nameEn: name, type: 'city', region: 'غير محدد', sortOrder: 99 },
+    });
+  }
+
   async create(dto: CreateDestinationDto) {
     return this.prisma.destination.create({
       data: {
