@@ -64,7 +64,11 @@ export class WhatsappService {
   }
 
   private formatTwilioTo(phone: string): string {
-    const normalized = phone.startsWith('+') ? phone : `+${phone}`;
+    let normalized = phone.trim();
+    if (normalized.startsWith('+')) return `whatsapp:${normalized}`;
+    if (normalized.startsWith('00')) normalized = '+' + normalized.slice(2);
+    else if (normalized.startsWith('0')) normalized = '+966' + normalized.slice(1);
+    else normalized = '+' + normalized;
     return `whatsapp:${normalized}`;
   }
 
@@ -373,6 +377,112 @@ export class WhatsappService {
       params.pdfBuffer,
       `manifest-${params.referenceNumber}.pdf`,
       `كشف ركاب — ${params.referenceNumber}`,
+    );
+  }
+
+  async notifyDriverWithContract(params: {
+    driverPhone: string;
+    referenceNumber: string;
+    originNameAr: string;
+    destinationNameAr: string;
+    departureAt: Date;
+    pdfBuffer: Buffer;
+  }): Promise<void> {
+    if (!this.enabled) return;
+    const dateStr = new Intl.DateTimeFormat('ar-SA', {
+      year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+      timeZone: 'Asia/Riyadh',
+    }).format(params.departureAt);
+
+    if (this.provider === 'meta') {
+      await this.sendMetaTemplate(
+        params.driverPhone,
+        'ams_transport_contract',
+        [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr],
+      );
+      await this.sendDocument(
+        params.driverPhone,
+        params.pdfBuffer,
+        `contract-${params.referenceNumber}.pdf`,
+        `عقد نقل — ${params.referenceNumber}`,
+      );
+      return;
+    }
+
+    const body = [
+      '📄 *عقد نقل*',
+      '',
+      `رقم العقد: *${params.referenceNumber}*`,
+      `المسار: ${params.originNameAr} ← ${params.destinationNameAr}`,
+      `موعد الانطلاق: ${dateStr}`,
+      '',
+      'يرجى مراجعة العقد المرفق.',
+    ].join('\n');
+
+    await this.sendText(params.driverPhone, body);
+    await this.sendDocument(
+      params.driverPhone,
+      params.pdfBuffer,
+      `contract-${params.referenceNumber}.pdf`,
+      `عقد نقل — ${params.referenceNumber}`,
+    );
+  }
+
+  async notifyAdminWithContract(params: {
+    referenceNumber: string;
+    riderName: string;
+    riderPhone: string;
+    originNameAr: string;
+    destinationNameAr: string;
+    departureAt: Date;
+    passengerCount: number;
+    pdfBuffer: Buffer;
+  }): Promise<void> {
+    if (!this.enabled) return;
+    if (!this.adminNumber) {
+      this.logger.warn('notifyAdminWithContract skipped — ADMIN_WHATSAPP_NUMBER not set');
+      return;
+    }
+
+    const dateStr = new Intl.DateTimeFormat('ar-SA', {
+      year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+      timeZone: 'Asia/Riyadh',
+    }).format(params.departureAt);
+
+    if (this.provider === 'meta') {
+      await this.sendMetaTemplate(
+        this.adminNumber,
+        'ams_transport_contract',
+        [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr],
+      );
+      await this.sendDocument(
+        this.adminNumber,
+        params.pdfBuffer,
+        `contract-${params.referenceNumber}.pdf`,
+        `عقد نقل — ${params.referenceNumber}`,
+      );
+      return;
+    }
+
+    const body = [
+      '📄 *عقد نقل جديد*',
+      '',
+      `رقم العقد: *${params.referenceNumber}*`,
+      `الراكب: ${params.riderName}`,
+      `هاتف الراكب: ${params.riderPhone}`,
+      `المسار: ${params.originNameAr} ← ${params.destinationNameAr}`,
+      `تاريخ المغادرة: ${dateStr}`,
+      `عدد الركاب: ${params.passengerCount}`,
+    ].join('\n');
+
+    await this.sendText(this.adminNumber, body);
+    await this.sendDocument(
+      this.adminNumber,
+      params.pdfBuffer,
+      `contract-${params.referenceNumber}.pdf`,
+      `عقد نقل — ${params.referenceNumber}`,
     );
   }
 

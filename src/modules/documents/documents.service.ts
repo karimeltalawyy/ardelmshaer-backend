@@ -88,6 +88,12 @@ export class DocumentsService {
       });
     }
 
+    if (docType === 'contract') {
+      this.dispatchContractNotifications(booking, pdfBuffer).catch((err) => {
+        this.logger.warn(`contract WhatsApp dispatch failed for booking ${bookingId}: ${(err as Error).message}`);
+      });
+    }
+
     return document;
   }
 
@@ -213,6 +219,54 @@ export class DocumentsService {
       throw new BadRequestException(
         'Maximum passenger manifest regenerations reached while the trip is not completed',
       );
+    }
+  }
+
+  private async dispatchContractNotifications(booking: any, pdfBuffer: Buffer): Promise<void> {
+    const reference = booking.bookingSerial
+      ? `AMS-${String(booking.bookingSerial).padStart(6, '0')}`
+      : booking.id;
+
+    const origin = booking.trip.route.origin.nameAr;
+    const destination = booking.trip.route.destination.nameAr;
+    const departureAt = new Date(booking.trip.departureAt);
+    const passengerCount: number = Array.isArray(booking.passengers)
+      ? booking.passengers.length
+      : booking.seatCount ?? 0;
+
+    const riderData = this.resolveRiderDataForPdf(booking);
+    const driverPhone: string = booking.trip?.driver?.user?.phone ?? '';
+
+    if (driverPhone) {
+      try {
+        await this.whatsapp.notifyDriverWithContract({
+          driverPhone,
+          referenceNumber: reference,
+          originNameAr: origin,
+          destinationNameAr: destination,
+          departureAt,
+          pdfBuffer,
+        });
+      } catch (e) {
+        this.logger.error(`dispatchContractNotifications: driver notification failed — ${(e as Error).message}`);
+      }
+    } else {
+      this.logger.warn(`dispatchContractNotifications: driver phone missing for booking ${reference}`);
+    }
+
+    try {
+      await this.whatsapp.notifyAdminWithContract({
+        referenceNumber: reference,
+        riderName: riderData.fullName,
+        riderPhone: riderData.phone,
+        originNameAr: origin,
+        destinationNameAr: destination,
+        departureAt,
+        passengerCount,
+        pdfBuffer,
+      });
+    } catch (e) {
+      this.logger.error(`dispatchContractNotifications: admin notification failed — ${(e as Error).message}`);
     }
   }
 
