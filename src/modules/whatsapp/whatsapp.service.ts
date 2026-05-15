@@ -323,12 +323,11 @@ export class WhatsappService {
       `عدد الركاب: ${params.passengerCount}`,
     ].join('\n');
 
-    await this.sendText(this.adminNumber, body);
     await this.sendDocument(
       this.adminNumber,
       params.pdfBuffer,
       `booking-${params.referenceNumber}.pdf`,
-      `كشف ركاب — ${params.referenceNumber}`,
+      body,
       params.fileUrl,
     );
   }
@@ -374,12 +373,11 @@ export class WhatsappService {
       'يرجى مراجعة قائمة الركاب المرفقة.',
     ].join('\n');
 
-    await this.sendText(params.driverPhone, body);
     await this.sendDocument(
       params.driverPhone,
       params.pdfBuffer,
       `manifest-${params.referenceNumber}.pdf`,
-      `كشف ركاب — ${params.referenceNumber}`,
+      body,
       params.fileUrl,
     );
   }
@@ -425,12 +423,11 @@ export class WhatsappService {
       'يرجى مراجعة العقد المرفق.',
     ].join('\n');
 
-    await this.sendText(params.driverPhone, body);
     await this.sendDocument(
       params.driverPhone,
       params.pdfBuffer,
       `contract-${params.referenceNumber}.pdf`,
-      `عقد نقل — ${params.referenceNumber}`,
+      body,
       params.fileUrl,
     );
   }
@@ -484,12 +481,11 @@ export class WhatsappService {
       `عدد الركاب: ${params.passengerCount}`,
     ].join('\n');
 
-    await this.sendText(this.adminNumber, body);
     await this.sendDocument(
       this.adminNumber,
       params.pdfBuffer,
       `contract-${params.referenceNumber}.pdf`,
-      `عقد نقل — ${params.referenceNumber}`,
+      body,
       params.fileUrl,
     );
   }
