@@ -167,10 +167,10 @@ export class WhatsappService {
     }
   }
 
-  async sendDocument(to: string, pdfBuffer: Buffer, filename: string, caption: string): Promise<void> {
+  async sendDocument(to: string, pdfBuffer: Buffer, filename: string, caption: string, preUploadedUrl?: string): Promise<void> {
     if (!this.enabled) return;
     if (this.provider === 'meta') {
-      const mediaUrl = await this.uploadPdfToCloudinary(pdfBuffer, filename);
+      const mediaUrl = preUploadedUrl ?? await this.uploadPdfToCloudinary(pdfBuffer, filename);
       await this.sendMetaMessage({
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
@@ -188,7 +188,7 @@ export class WhatsappService {
     if (!this.canSendTwilio()) return;
 
     try {
-      const mediaUrl = await this.uploadPdfToCloudinary(pdfBuffer, filename);
+      const mediaUrl = preUploadedUrl ?? await this.uploadPdfToCloudinary(pdfBuffer, filename);
       await this.client!.messages.create({
         from: this.from,
         to: this.formatTwilioTo(to),
@@ -283,6 +283,7 @@ export class WhatsappService {
     departureAt: Date;
     passengerCount: number;
     pdfBuffer: Buffer;
+    fileUrl?: string;
   }): Promise<void> {
     if (!this.enabled) return;
     if (!this.adminNumber) {
@@ -328,6 +329,7 @@ export class WhatsappService {
       params.pdfBuffer,
       `booking-${params.referenceNumber}.pdf`,
       `كشف ركاب — ${params.referenceNumber}`,
+      params.fileUrl,
     );
   }
 
@@ -338,6 +340,7 @@ export class WhatsappService {
     destinationNameAr: string;
     departureAt: Date;
     pdfBuffer: Buffer;
+    fileUrl?: string;
   }): Promise<void> {
     if (!this.enabled) return;
     const dateStr = new Intl.DateTimeFormat('ar-SA', {
@@ -377,6 +380,7 @@ export class WhatsappService {
       params.pdfBuffer,
       `manifest-${params.referenceNumber}.pdf`,
       `كشف ركاب — ${params.referenceNumber}`,
+      params.fileUrl,
     );
   }
 
@@ -387,6 +391,7 @@ export class WhatsappService {
     destinationNameAr: string;
     departureAt: Date;
     pdfBuffer: Buffer;
+    fileUrl?: string;
   }): Promise<void> {
     if (!this.enabled) return;
     const dateStr = new Intl.DateTimeFormat('ar-SA', {
@@ -426,6 +431,7 @@ export class WhatsappService {
       params.pdfBuffer,
       `contract-${params.referenceNumber}.pdf`,
       `عقد نقل — ${params.referenceNumber}`,
+      params.fileUrl,
     );
   }
 
@@ -438,6 +444,7 @@ export class WhatsappService {
     departureAt: Date;
     passengerCount: number;
     pdfBuffer: Buffer;
+    fileUrl?: string;
   }): Promise<void> {
     if (!this.enabled) return;
     if (!this.adminNumber) {
@@ -483,6 +490,7 @@ export class WhatsappService {
       params.pdfBuffer,
       `contract-${params.referenceNumber}.pdf`,
       `عقد نقل — ${params.referenceNumber}`,
+      params.fileUrl,
     );
   }
 

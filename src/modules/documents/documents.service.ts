@@ -83,13 +83,13 @@ export class DocumentsService {
     });
 
     if (docType === 'passenger_manifest') {
-      this.dispatchManifestNotifications(booking, pdfBuffer).catch((err) => {
+      this.dispatchManifestNotifications(booking, pdfBuffer, fileUrl).catch((err) => {
         this.logger.warn(`manifest WhatsApp dispatch failed for booking ${bookingId}: ${(err as Error).message}`);
       });
     }
 
     if (docType === 'contract') {
-      this.dispatchContractNotifications(booking, pdfBuffer).catch((err) => {
+      this.dispatchContractNotifications(booking, pdfBuffer, fileUrl).catch((err) => {
         this.logger.warn(`contract WhatsApp dispatch failed for booking ${bookingId}: ${(err as Error).message}`);
       });
     }
@@ -100,6 +100,7 @@ export class DocumentsService {
   private async dispatchManifestNotifications(
     booking: any,
     pdfBuffer: Buffer,
+    fileUrl: string,
   ): Promise<{ driverSent: boolean; driverError: string | null; adminSent: boolean; adminError: string | null }> {
     const reference = booking.bookingSerial
       ? `AMS-${String(booking.bookingSerial).padStart(6, '0')}`
@@ -127,6 +128,7 @@ export class DocumentsService {
           destinationNameAr: destination,
           departureAt,
           pdfBuffer,
+          fileUrl,
         });
         driverSent = true;
       } catch (e) {
@@ -151,6 +153,7 @@ export class DocumentsService {
         departureAt,
         passengerCount,
         pdfBuffer,
+        fileUrl,
       });
       adminSent = true;
     } catch (e) {
@@ -222,7 +225,7 @@ export class DocumentsService {
     }
   }
 
-  private async dispatchContractNotifications(booking: any, pdfBuffer: Buffer): Promise<void> {
+  private async dispatchContractNotifications(booking: any, pdfBuffer: Buffer, fileUrl: string): Promise<void> {
     const reference = booking.bookingSerial
       ? `AMS-${String(booking.bookingSerial).padStart(6, '0')}`
       : booking.id;
@@ -246,6 +249,7 @@ export class DocumentsService {
           destinationNameAr: destination,
           departureAt,
           pdfBuffer,
+          fileUrl,
         });
       } catch (e) {
         this.logger.error(`dispatchContractNotifications: driver notification failed — ${(e as Error).message}`);
@@ -264,6 +268,7 @@ export class DocumentsService {
         departureAt,
         passengerCount,
         pdfBuffer,
+        fileUrl,
       });
     } catch (e) {
       this.logger.error(`dispatchContractNotifications: admin notification failed — ${(e as Error).message}`);
