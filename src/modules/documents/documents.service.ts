@@ -312,7 +312,9 @@ export class DocumentsService {
 
     const html = await this.buildHtml('passenger_manifest', booking);
     const pdfBuffer = await this.renderToPdf(html);
-    return this.dispatchManifestNotifications(booking, pdfBuffer);
+    const filename = `passenger_manifest-${bookingId}-${Date.now()}.pdf`;
+    const fileUrl = await this.s3.uploadBuffer('documents', pdfBuffer, filename, 'application/pdf');
+    return this.dispatchManifestNotifications(booking, pdfBuffer, fileUrl);
   }
 
   // ─── List documents for a booking ────────────────────────────────────────────
