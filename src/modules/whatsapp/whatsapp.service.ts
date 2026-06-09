@@ -612,12 +612,13 @@ export class WhatsappService {
       return;
     }
 
+    // Mirrors the approved Meta template `ams_booking_confirmed` verbatim.
     const body = [
-      '✅ *تم تأكيد حجزك!*',
+      'تم تأكيد حجزك ✅',
       '',
       `أهلاً ${params.riderName}،`,
       '',
-      `رقم الحجز: *${params.referenceNumber}*`,
+      `رقم الحجز: ${params.referenceNumber}`,
       `المسار: ${params.originNameAr} ← ${params.destinationNameAr}`,
       `موعد المغادرة: ${dateStr}`,
       `عنوان الإقلاع: ${params.pickupAddress}`,
