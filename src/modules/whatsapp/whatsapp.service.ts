@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Twilio } from 'twilio';
 import { v2 as cloudinary } from 'cloudinary';
 
-type WhatsappProvider = 'meta' | 'twilio';
+type WhatsappProvider = 'meta' | 'twilio' | 'wapilot';
 
 @Injectable()
 export class WhatsappService {
@@ -18,6 +18,10 @@ export class WhatsappService {
   private readonly metaPhoneNumberId: string;
   private readonly metaApiVersion: string;
 
+  private readonly wapilotBaseUrl: string;
+  private readonly wapilotToken: string;
+  private readonly wapilotInstanceId: string;
+
   constructor(private config: ConfigService) {
     this.provider = (this.config.get<string>('WHATSAPP_PROVIDER') ?? 'meta') as WhatsappProvider;
     this.enabled = this.config.get<string>('WHATSAPP_NOTIFICATIONS_ENABLED') !== 'false';
@@ -26,6 +30,10 @@ export class WhatsappService {
     this.metaToken = this.config.get<string>('META_WHATSAPP_ACCESS_TOKEN') ?? '';
     this.metaPhoneNumberId = this.config.get<string>('META_WHATSAPP_PHONE_NUMBER_ID') ?? '';
     this.metaApiVersion = this.config.get<string>('META_WHATSAPP_API_VERSION') ?? 'v22.0';
+
+    this.wapilotBaseUrl = (this.config.get<string>('WAPILOT_BASE_URL') ?? 'https://api.wapilot.net/api/v2').replace(/\/+$/, '');
+    this.wapilotToken = this.config.get<string>('WAPILOT_API_TOKEN') ?? '';
+    this.wapilotInstanceId = this.config.get<string>('WAPILOT_INSTANCE_ID') ?? '';
 
     const accountSid = this.config.get<string>('TWILIO_ACCOUNT_SID') ?? '';
     const authToken = this.config.get<string>('TWILIO_AUTH_TOKEN') ?? '';
@@ -58,8 +66,17 @@ export class WhatsappService {
       return;
     }
 
+    if (this.provider === 'wapilot') {
+      if (!this.wapilotToken || !this.wapilotInstanceId) {
+        this.logger.warn('Wapilot WhatsApp selected but not fully configured — set WAPILOT_API_TOKEN and WAPILOT_INSTANCE_ID. Notifications disabled');
+      } else {
+        this.logger.log(`WhatsApp provider set to Wapilot (instance=${this.wapilotInstanceId})`);
+      }
+      return;
+    }
+
     this.logger.warn(
-      `Unknown WHATSAPP_PROVIDER="${this.provider}" — expected "meta" or "twilio". Notifications disabled`,
+      `Unknown WHATSAPP_PROVIDER="${this.provider}" — expected "meta", "twilio" or "wapilot". Notifications disabled`,
     );
   }
 
@@ -74,6 +91,66 @@ export class WhatsappService {
 
   private formatMetaTo(phone: string): string {
     return phone.replace(/[^\d]/g, '');
+  }
+
+  /** Normalize any phone to a Wapilot chat id: international digits + "@c.us". Saudi local 0X → 966X. */
+  private formatWapilotChatId(phone: string): string {
+    let n = phone.trim().replace(/[\s()+-]/g, '');
+    if (n.startsWith('00')) n = n.slice(2);
+    else if (n.startsWith('0')) n = '966' + n.slice(1);
+    n = n.replace(/[^\d]/g, '');
+    return `${n}@c.us`;
+  }
+
+  private canSendWapilot(): boolean {
+    return !!this.wapilotToken && !!this.wapilotInstanceId;
+  }
+
+  private async sendWapilotText(to: string, text: string): Promise<void> {
+    const chatId = this.formatWapilotChatId(to);
+    const url = `${this.wapilotBaseUrl}/${this.wapilotInstanceId}/send-message`;
+    this.logger.log(`WhatsApp (Wapilot) sending text → chat_id=${chatId}`);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { token: this.wapilotToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text }),
+      });
+      const result = (await res.json().catch(() => ({}))) as Record<string, any>;
+      if (!res.ok || result?.success === false) {
+        this.logger.error(`WhatsApp (Wapilot) text failed — HTTP ${res.status}: ${JSON.stringify(result)}`);
+        return;
+      }
+      this.logger.log(`WhatsApp (Wapilot) text queued — id=${result?.message_id ?? result?.data?.message_id ?? 'n/a'}`);
+    } catch (e) {
+      this.logger.error(`WhatsApp (Wapilot) text error: ${(e as Error).message}`);
+    }
+  }
+
+  private async sendWapilotFile(to: string, pdfBuffer: Buffer, filename: string, caption: string): Promise<void> {
+    const chatId = this.formatWapilotChatId(to);
+    const url = `${this.wapilotBaseUrl}/${this.wapilotInstanceId}/send-file`;
+    this.logger.log(`WhatsApp (Wapilot) sending file → chat_id=${chatId} file=${filename}`);
+    try {
+      const form = new FormData();
+      form.append('chat_id', chatId);
+      form.append('caption', caption);
+      form.append('media', new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }), filename);
+      // Do NOT set Content-Type — fetch sets the multipart boundary automatically.
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { token: this.wapilotToken },
+        body: form,
+      });
+      const result = (await res.json().catch(() => ({}))) as Record<string, any>;
+      if (!res.ok || result?.success === false) {
+        this.logger.error(`WhatsApp (Wapilot) file failed — HTTP ${res.status}: ${JSON.stringify(result)}`);
+        return;
+      }
+      this.logger.log(`WhatsApp (Wapilot) file queued — id=${result?.message_id ?? result?.data?.message_id ?? 'n/a'}`);
+    } catch (e) {
+      this.logger.error(`WhatsApp (Wapilot) file error: ${(e as Error).message}`);
+    }
   }
 
   private canSendMeta(): boolean {
@@ -150,6 +227,15 @@ export class WhatsappService {
       return;
     }
 
+    if (this.provider === 'wapilot') {
+      if (!this.canSendWapilot()) {
+        this.logger.warn('WhatsApp Wapilot sendText skipped — not configured');
+        return;
+      }
+      await this.sendWapilotText(to, body);
+      return;
+    }
+
     if (!this.canSendTwilio()) {
       this.logger.warn('WhatsApp Twilio sendText skipped — client not initialized');
       return;
@@ -182,6 +268,12 @@ export class WhatsappService {
           caption,
         },
       });
+      return;
+    }
+
+    if (this.provider === 'wapilot') {
+      if (!this.canSendWapilot()) return;
+      await this.sendWapilotFile(to, pdfBuffer, filename, caption);
       return;
     }
 
