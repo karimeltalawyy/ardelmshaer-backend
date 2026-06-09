@@ -506,10 +506,11 @@ export class WhatsappService {
       return;
     }
 
+    // Same house-style as the manifest template (sent as the PDF caption).
     const body = [
-      '📄 *عقد نقل*',
+      'عقد نقل 📄',
       '',
-      `رقم العقد: *${params.referenceNumber}*`,
+      `رقم العقد: ${params.referenceNumber}`,
       `المسار: ${params.originNameAr} ← ${params.destinationNameAr}`,
       `موعد الانطلاق: ${dateStr}`,
       '',
@@ -563,15 +564,15 @@ export class WhatsappService {
       return;
     }
 
+    // Same house-style as the manifest template (sent as the PDF caption).
     const body = [
-      '📄 *عقد نقل جديد*',
+      'عقد نقل 📄',
       '',
-      `رقم العقد: *${params.referenceNumber}*`,
-      `الراكب: ${params.riderName}`,
-      `هاتف الراكب: ${params.riderPhone}`,
+      `رقم العقد: ${params.referenceNumber}`,
       `المسار: ${params.originNameAr} ← ${params.destinationNameAr}`,
-      `تاريخ المغادرة: ${dateStr}`,
-      `عدد الركاب: ${params.passengerCount}`,
+      `موعد الانطلاق: ${dateStr}`,
+      '',
+      'يرجى مراجعة العقد المرفق.',
     ].join('\n');
 
     await this.sendDocument(
