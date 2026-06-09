@@ -404,15 +404,15 @@ export class WhatsappService {
       return;
     }
 
+    // Mirrors the approved Meta template `ams_trip_manifest` verbatim (sent as the PDF caption).
     const body = [
-      '🚗 *حجز جديد*',
+      'كشف ركاب 📋',
       '',
-      `رقم الحجز: *${params.referenceNumber}*`,
-      `الراكب: ${params.riderName}`,
-      `هاتف الراكب: ${params.riderPhone}`,
+      `رقم الحجز: ${params.referenceNumber}`,
       `المسار: ${params.originNameAr} ← ${params.destinationNameAr}`,
-      `تاريخ المغادرة: ${dateStr}`,
-      `عدد الركاب: ${params.passengerCount}`,
+      `موعد الانطلاق: ${dateStr}`,
+      '',
+      'يرجى مراجعة قائمة الركاب المرفقة.',
     ].join('\n');
 
     await this.sendDocument(
@@ -455,10 +455,11 @@ export class WhatsappService {
       return;
     }
 
+    // Mirrors the approved Meta template `ams_trip_manifest` verbatim (sent as the PDF caption).
     const body = [
-      '📋 *كشف ركاب*',
+      'كشف ركاب 📋',
       '',
-      `رقم الحجز: *${params.referenceNumber}*`,
+      `رقم الحجز: ${params.referenceNumber}`,
       `المسار: ${params.originNameAr} ← ${params.destinationNameAr}`,
       `موعد الانطلاق: ${dateStr}`,
       '',
