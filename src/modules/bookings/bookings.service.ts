@@ -282,7 +282,7 @@ export class BookingsService {
     const driverPayout = Math.round((totalPrice - platformFee) * 100) / 100;
 
     // ── Transactional seat lock + booking creation ────────────────────────────
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const activeBooking = await tx.booking.findFirst({
         where: {
           tripId: dto.tripId,
@@ -346,8 +346,31 @@ export class BookingsService {
         );
       });
 
-      return this.withCancellationMeta(created, false);
+      return created;
     });
+
+    // Notify the rider immediately (fire-and-forget). The booking is against an
+    // already-scheduled trip, so route/date/pickup are known — mirrors assignTrip().
+    // A WhatsApp failure must never fail the booking.
+    const riderPhone = (result as any)?.riderPhone || result?.contactPhone;
+    if (riderPhone) {
+      const reference = `AMS-${result!.bookingSerial.toString().padStart(6, '0')}`;
+      const pickupAddr =
+        result!.pickupMode === PickupMode.user_location
+          ? (result!.pickupAddress ?? '')
+          : (result!.pickupBranch?.addressAr ?? '');
+      this.whatsappService.notifyRider({
+        riderPhone,
+        riderName: (result as any)?.riderName || 'العميل',
+        referenceNumber: reference,
+        originNameAr: result!.trip?.route?.origin?.nameAr ?? '',
+        destinationNameAr: result!.trip?.route?.destination?.nameAr ?? '',
+        departureAt: result!.trip?.departureAt ?? new Date(),
+        pickupAddress: pickupAddr,
+      }).catch(() => {});
+    }
+
+    return this.withCancellationMeta(result, false);
   }
 
   // ─── Create guest booking (demand-driven request) ───────────────────────────
