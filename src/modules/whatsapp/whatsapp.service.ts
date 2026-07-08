@@ -89,15 +89,47 @@ export class WhatsappService {
     return `whatsapp:${normalized}`;
   }
 
+  /**
+   * Normalize any phone to Meta's E.164-without-plus digits (e.g. 966561331896).
+   * Recipients mix Saudi and Egyptian numbers, so a leading local `0` is resolved
+   * by the mobile prefix, NOT assumed to be Saudi — same rules as Wapilot:
+   *   - `00…` → already international, drop the `00`   (00201003489096 → 201003489096)
+   *   - `01…` → Egyptian mobile  → `20` + rest         (01207245632   → 201207245632)
+   *   - `05…` → Saudi mobile     → `966` + rest        (0561331896    → 966561331896)
+   * Numbers that already carry a country code (966…, 20…) are left untouched.
+   */
   private formatMetaTo(phone: string): string {
-    return phone.replace(/[^\d]/g, '');
+    let n = phone.trim().replace(/[\s()+-]/g, '');
+    if (n.startsWith('00')) {
+      n = n.slice(2);
+    } else if (n.startsWith('0')) {
+      const rest = n.slice(1);
+      if (rest.startsWith('1')) n = '20' + rest; // Egyptian mobile 01X…
+      else if (rest.startsWith('5')) n = '966' + rest; // Saudi mobile 05X…
+      else n = '966' + rest; // fallback: assume Saudi
+    }
+    return n.replace(/[^\d]/g, '');
   }
 
-  /** Normalize any phone to a Wapilot chat id: international digits + "@c.us". Saudi local 0X → 966X. */
+  /**
+   * Normalize any phone to a Wapilot chat id: international digits + "@c.us".
+   * Recipients are a mix of Saudi and Egyptian numbers, so a leading local `0`
+   * is resolved by the mobile prefix, NOT assumed to be Saudi:
+   *   - `00…`  → already international, just drop the `00`   (e.g. 00201003489096 → 201003489096)
+   *   - `01…`  → Egyptian mobile  → `20` + rest             (e.g. 01207245632   → 201207245632)
+   *   - `05…`  → Saudi mobile     → `966` + rest            (e.g. 0561331896    → 966561331896)
+   * Numbers that already carry a country code (e.g. `966…`, `20…`) are left untouched.
+   */
   private formatWapilotChatId(phone: string): string {
     let n = phone.trim().replace(/[\s()+-]/g, '');
-    if (n.startsWith('00')) n = n.slice(2);
-    else if (n.startsWith('0')) n = '966' + n.slice(1);
+    if (n.startsWith('00')) {
+      n = n.slice(2);
+    } else if (n.startsWith('0')) {
+      const rest = n.slice(1);
+      if (rest.startsWith('1')) n = '20' + rest; // Egyptian mobile 01X…
+      else if (rest.startsWith('5')) n = '966' + rest; // Saudi mobile 05X…
+      else n = '966' + rest; // fallback: assume Saudi
+    }
     n = n.replace(/[^\d]/g, '');
     return `${n}@c.us`;
   }
