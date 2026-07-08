@@ -453,6 +453,20 @@ export class BookingsService {
       passengers:        dto.passengers,
     }).catch(() => {});
 
+    // Confirm to the rider immediately. The company commits to fulfilling the
+    // trip even before a specific car/driver is assigned, so we send the
+    // approved ams_booking_confirmed template right away. Pickup is coordinated
+    // afterwards, so we send a placeholder for the (required) pickup field.
+    this.whatsappService.notifyRider({
+      riderPhone:        dto.contactPhone,
+      riderName:         dto.passengers[0]?.fullName || 'العميل',
+      referenceNumber:   reference,
+      originNameAr:      origin.nameAr,
+      destinationNameAr: destination.nameAr,
+      departureAt:       new Date(dto.requestedDate),
+      pickupAddress:     'سيتم التنسيق معكم لتحديد مكان الإقلاع',
+    }).catch(() => {});
+
     return {
       id:                booking.id,
       reference,
