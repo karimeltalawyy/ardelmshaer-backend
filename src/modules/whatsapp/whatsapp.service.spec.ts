@@ -45,7 +45,9 @@ describe('WhatsappService', () => {
 
     fetchMock = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ messages: [{ id: 'wamid.test123' }] }),
+      // `id` satisfies the media-upload call (POST /media → { id });
+      // `messages` satisfies the message-send call (POST /messages → { messages }).
+      json: async () => ({ id: 'media-test-1', messages: [{ id: 'wamid.test123' }] }),
       text: async () => '',
     });
     global.fetch = fetchMock;
@@ -186,20 +188,26 @@ describe('WhatsappService', () => {
       pdfBuffer: Buffer.from('%PDF-1.4 test content'),
     };
 
-    it('sends ams_trip_manifest template then a document', async () => {
+    it('sends ams_trip_manifest template, uploads media to Meta, then sends document by id', async () => {
       await service.notifyDriverWithManifest(params);
 
-      // 2 fetch calls: template + document
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      // 3 fetch calls: template (/messages) → media upload (/media) → document (/messages)
+      expect(fetchMock).toHaveBeenCalledTimes(3);
 
       const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body);
       expect(firstBody.type).toBe('template');
       expect(firstBody.template.name).toBe('ams_trip_manifest');
       expect(firstBody.to).toBe('966509876543');
 
-      const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body);
-      expect(secondBody.type).toBe('document');
-      expect(secondBody.document.filename).toBe('manifest-AMS-000007.pdf');
+      // 2nd call uploads the PDF bytes to Meta's media endpoint (multipart, not JSON)
+      expect(fetchMock.mock.calls[1][0]).toContain('1057932304077374/media');
+
+      // 3rd call sends the document by the returned media id — never a Cloudinary link
+      const thirdBody = JSON.parse(fetchMock.mock.calls[2][1].body);
+      expect(thirdBody.type).toBe('document');
+      expect(thirdBody.document.id).toBe('media-test-1');
+      expect(thirdBody.document.link).toBeUndefined();
+      expect(thirdBody.document.filename).toBe('manifest-AMS-000007.pdf');
     });
 
     it('includes booking reference, route and date in template params', async () => {
@@ -235,19 +243,22 @@ describe('WhatsappService', () => {
       pdfBuffer: Buffer.from('%PDF-1.4 test'),
     };
 
-    it('sends ams_trip_manifest template then document to admin', async () => {
+    it('sends ams_trip_manifest template, uploads media, then sends document by id to admin', async () => {
       await service.notifyAdminWithManifest(params);
 
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
 
       const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body);
       expect(firstBody.type).toBe('template');
       expect(firstBody.template.name).toBe('ams_trip_manifest');
       expect(firstBody.to).toBe('966556217079'); // admin number
 
-      const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body);
-      expect(secondBody.type).toBe('document');
-      expect(secondBody.document.filename).toBe('booking-AMS-000003.pdf');
+      expect(fetchMock.mock.calls[1][0]).toContain('1057932304077374/media');
+
+      const thirdBody = JSON.parse(fetchMock.mock.calls[2][1].body);
+      expect(thirdBody.type).toBe('document');
+      expect(thirdBody.document.id).toBe('media-test-1');
+      expect(thirdBody.document.filename).toBe('booking-AMS-000003.pdf');
     });
   });
 

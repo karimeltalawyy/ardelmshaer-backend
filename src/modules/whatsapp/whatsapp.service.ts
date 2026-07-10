@@ -197,6 +197,41 @@ export class WhatsappService {
     return `https://graph.facebook.com/${this.metaApiVersion}/${this.metaPhoneNumberId}/messages`;
   }
 
+  private getMetaMediaEndpoint(): string {
+    return `https://graph.facebook.com/${this.metaApiVersion}/${this.metaPhoneNumberId}/media`;
+  }
+
+  /**
+   * Upload a PDF to Meta's own media store and return its media id.
+   *
+   * We do NOT hand Meta a Cloudinary link: this account has PDF/ZIP delivery
+   * disabled, so any `…/*.pdf` Cloudinary URL returns HTTP 401 and Meta silently
+   * fails to fetch it (async error 131053 — the send API still returns "accepted",
+   * so the document just never arrives). Uploading the bytes directly to Meta and
+   * sending by media id sidesteps the public-URL/content-type problem completely.
+   */
+  private async uploadMediaToMeta(pdfBuffer: Buffer, filename: string): Promise<string> {
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('type', 'application/pdf');
+    form.append('file', new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }), filename);
+
+    const res = await fetch(this.getMetaMediaEndpoint(), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.metaToken}` },
+      body: form,
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Meta media upload HTTP ${res.status}: ${errorText}`);
+    }
+
+    const json = (await res.json()) as { id?: string };
+    if (!json.id) throw new Error('Meta media upload returned no media id');
+    return json.id;
+  }
+
   private async sendMetaTemplate(
     to: string,
     templateName: string,
@@ -288,14 +323,16 @@ export class WhatsappService {
   async sendDocument(to: string, pdfBuffer: Buffer, filename: string, caption: string, preUploadedUrl?: string): Promise<void> {
     if (!this.enabled) return;
     if (this.provider === 'meta') {
-      const mediaUrl = preUploadedUrl ?? await this.uploadPdfToCloudinary(pdfBuffer, filename);
+      // Upload the bytes to Meta and send by media id — NOT a Cloudinary link
+      // (this account blocks PDF delivery → 401 → Meta can't fetch it). See uploadMediaToMeta.
+      const mediaId = await this.uploadMediaToMeta(pdfBuffer, filename);
       await this.sendMetaMessage({
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
         to: this.formatMetaTo(to),
         type: 'document',
         document: {
-          link: mediaUrl,
+          id: mediaId,
           filename,
           caption,
         },
