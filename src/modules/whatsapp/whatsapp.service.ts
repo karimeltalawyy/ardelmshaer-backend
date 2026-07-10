@@ -252,6 +252,47 @@ export class WhatsappService {
     });
   }
 
+  /**
+   * Send an approved template whose HEADER is a DOCUMENT, carrying the PDF as the
+   * header media (by Meta media id) plus the body text params — ONE message.
+   *
+   * Why a template and not a plain document: a plain document is a free-form/session
+   * message, only deliverable inside the recipient's 24h window. Drivers never message
+   * the business first, so that window is closed and the PDF would be dropped. A template
+   * bypasses the window, and a DOCUMENT-header template lets the same single message
+   * carry the file — matching the booking-confirmation behaviour (one message, no window).
+   */
+  private async sendMetaTemplateWithDocument(
+    to: string,
+    templateName: string,
+    documentMediaId: string,
+    documentFilename: string,
+    bodyParams: string[],
+  ): Promise<void> {
+    await this.sendMetaMessage({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: this.formatMetaTo(to),
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: 'ar' },
+        components: [
+          {
+            type: 'header',
+            parameters: [
+              { type: 'document', document: { id: documentMediaId, filename: documentFilename } },
+            ],
+          },
+          {
+            type: 'body',
+            parameters: bodyParams.map(text => ({ type: 'text', text })),
+          },
+        ],
+      },
+    });
+  }
+
   private async sendMetaMessage(payload: Record<string, unknown>): Promise<void> {
     if (!this.canSendMeta()) {
       throw new Error('WhatsApp Meta client not configured — check META_WHATSAPP_ACCESS_TOKEN and META_WHATSAPP_PHONE_NUMBER_ID');
@@ -459,16 +500,14 @@ export class WhatsappService {
     }).format(params.departureAt);
 
     if (this.provider === 'meta') {
-      await this.sendMetaTemplate(
+      const filename = `booking-${params.referenceNumber}.pdf`;
+      const mediaId = await this.uploadMediaToMeta(params.pdfBuffer, filename);
+      await this.sendMetaTemplateWithDocument(
         this.adminNumber,
-        'ams_trip_manifest',
+        'ams_trip_manifest_doc',
+        mediaId,
+        filename,
         [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr],
-      );
-      await this.sendDocument(
-        this.adminNumber,
-        params.pdfBuffer,
-        `booking-${params.referenceNumber}.pdf`,
-        `كشف ركاب — ${params.referenceNumber}`,
       );
       return;
     }
@@ -510,16 +549,14 @@ export class WhatsappService {
     }).format(params.departureAt);
 
     if (this.provider === 'meta') {
-      await this.sendMetaTemplate(
+      const filename = `manifest-${params.referenceNumber}.pdf`;
+      const mediaId = await this.uploadMediaToMeta(params.pdfBuffer, filename);
+      await this.sendMetaTemplateWithDocument(
         params.driverPhone,
-        'ams_trip_manifest',
+        'ams_trip_manifest_doc',
+        mediaId,
+        filename,
         [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr],
-      );
-      await this.sendDocument(
-        params.driverPhone,
-        params.pdfBuffer,
-        `manifest-${params.referenceNumber}.pdf`,
-        `كشف ركاب — ${params.referenceNumber}`,
       );
       return;
     }
@@ -561,16 +598,14 @@ export class WhatsappService {
     }).format(params.departureAt);
 
     if (this.provider === 'meta') {
-      await this.sendMetaTemplate(
+      const filename = `contract-${params.referenceNumber}.pdf`;
+      const mediaId = await this.uploadMediaToMeta(params.pdfBuffer, filename);
+      await this.sendMetaTemplateWithDocument(
         params.driverPhone,
-        'ams_transport_contract',
+        'ams_transport_contract_doc',
+        mediaId,
+        filename,
         [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr],
-      );
-      await this.sendDocument(
-        params.driverPhone,
-        params.pdfBuffer,
-        `contract-${params.referenceNumber}.pdf`,
-        `عقد نقل — ${params.referenceNumber}`,
       );
       return;
     }
@@ -619,16 +654,14 @@ export class WhatsappService {
     }).format(params.departureAt);
 
     if (this.provider === 'meta') {
-      await this.sendMetaTemplate(
+      const filename = `contract-${params.referenceNumber}.pdf`;
+      const mediaId = await this.uploadMediaToMeta(params.pdfBuffer, filename);
+      await this.sendMetaTemplateWithDocument(
         this.adminNumber,
-        'ams_transport_contract',
+        'ams_transport_contract_doc',
+        mediaId,
+        filename,
         [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr],
-      );
-      await this.sendDocument(
-        this.adminNumber,
-        params.pdfBuffer,
-        `contract-${params.referenceNumber}.pdf`,
-        `عقد نقل — ${params.referenceNumber}`,
       );
       return;
     }
