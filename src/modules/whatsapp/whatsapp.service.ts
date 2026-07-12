@@ -501,14 +501,24 @@ export class WhatsappService {
 
     if (this.provider === 'meta') {
       const filename = `booking-${params.referenceNumber}.pdf`;
-      const mediaId = await this.uploadMediaToMeta(params.pdfBuffer, filename);
-      await this.sendMetaTemplateWithDocument(
-        this.adminNumber,
-        'ams_trip_manifest_doc',
-        mediaId,
-        filename,
-        [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr],
-      );
+      const bodyParams = [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr];
+      try {
+        const mediaId = await this.uploadMediaToMeta(params.pdfBuffer, filename);
+        await this.sendMetaTemplateWithDocument(
+          this.adminNumber,
+          'ams_trip_manifest_doc',
+          mediaId,
+          filename,
+          bodyParams,
+        );
+      } catch (err) {
+        // Fallback: the PDF-header template failed (media upload or send). Send the
+        // legacy text-only ams_trip_manifest template so the admin still gets notified.
+        this.logger.warn(
+          `notifyAdminWithManifest _doc failed — falling back to text-only ams_trip_manifest: ${(err as Error).message}`,
+        );
+        await this.sendMetaTemplate(this.adminNumber, 'ams_trip_manifest', bodyParams);
+      }
       return;
     }
 
@@ -550,14 +560,24 @@ export class WhatsappService {
 
     if (this.provider === 'meta') {
       const filename = `manifest-${params.referenceNumber}.pdf`;
-      const mediaId = await this.uploadMediaToMeta(params.pdfBuffer, filename);
-      await this.sendMetaTemplateWithDocument(
-        params.driverPhone,
-        'ams_trip_manifest_doc',
-        mediaId,
-        filename,
-        [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr],
-      );
+      const bodyParams = [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr];
+      try {
+        const mediaId = await this.uploadMediaToMeta(params.pdfBuffer, filename);
+        await this.sendMetaTemplateWithDocument(
+          params.driverPhone,
+          'ams_trip_manifest_doc',
+          mediaId,
+          filename,
+          bodyParams,
+        );
+      } catch (err) {
+        // Fallback: the PDF-header template failed (media upload or send). Send the
+        // legacy text-only ams_trip_manifest template so the driver still gets notified.
+        this.logger.warn(
+          `notifyDriverWithManifest _doc failed — falling back to text-only ams_trip_manifest: ${(err as Error).message}`,
+        );
+        await this.sendMetaTemplate(params.driverPhone, 'ams_trip_manifest', bodyParams);
+      }
       return;
     }
 
@@ -599,14 +619,24 @@ export class WhatsappService {
 
     if (this.provider === 'meta') {
       const filename = `contract-${params.referenceNumber}.pdf`;
-      const mediaId = await this.uploadMediaToMeta(params.pdfBuffer, filename);
-      await this.sendMetaTemplateWithDocument(
-        params.driverPhone,
-        'ams_transport_contract_doc',
-        mediaId,
-        filename,
-        [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr],
-      );
+      const bodyParams = [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr];
+      try {
+        const mediaId = await this.uploadMediaToMeta(params.pdfBuffer, filename);
+        await this.sendMetaTemplateWithDocument(
+          params.driverPhone,
+          'ams_transport_contract_doc',
+          mediaId,
+          filename,
+          bodyParams,
+        );
+      } catch (err) {
+        // Fallback: the PDF-header template failed (media upload or send). Send the
+        // legacy text-only ams_transport_contract template so the driver still gets notified.
+        this.logger.warn(
+          `notifyDriverWithContract _doc failed — falling back to text-only ams_transport_contract: ${(err as Error).message}`,
+        );
+        await this.sendMetaTemplate(params.driverPhone, 'ams_transport_contract', bodyParams);
+      }
       return;
     }
 
@@ -655,14 +685,24 @@ export class WhatsappService {
 
     if (this.provider === 'meta') {
       const filename = `contract-${params.referenceNumber}.pdf`;
-      const mediaId = await this.uploadMediaToMeta(params.pdfBuffer, filename);
-      await this.sendMetaTemplateWithDocument(
-        this.adminNumber,
-        'ams_transport_contract_doc',
-        mediaId,
-        filename,
-        [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr],
-      );
+      const bodyParams = [params.referenceNumber, params.originNameAr, params.destinationNameAr, dateStr];
+      try {
+        const mediaId = await this.uploadMediaToMeta(params.pdfBuffer, filename);
+        await this.sendMetaTemplateWithDocument(
+          this.adminNumber,
+          'ams_transport_contract_doc',
+          mediaId,
+          filename,
+          bodyParams,
+        );
+      } catch (err) {
+        // Fallback: the PDF-header template failed (media upload or send). Send the
+        // legacy text-only ams_transport_contract template so the admin still gets notified.
+        this.logger.warn(
+          `notifyAdminWithContract _doc failed — falling back to text-only ams_transport_contract: ${(err as Error).message}`,
+        );
+        await this.sendMetaTemplate(this.adminNumber, 'ams_transport_contract', bodyParams);
+      }
       return;
     }
 
