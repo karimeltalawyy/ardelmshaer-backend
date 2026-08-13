@@ -64,7 +64,16 @@ export class CarsService {
     const existing = await this.prisma.car.findUnique({
       where: { plateNumber: dto.plateNumber },
     });
-    if (existing) throw new ConflictException('Plate number already registered');
+    if (existing) {
+      // Deactivating a car keeps the row (and its unique plate), so re-adding the
+      // same plate fails here. Say so explicitly instead of "already registered",
+      // which reads like the create silently did nothing.
+      throw new ConflictException(
+        existing.status === 'inactive'
+          ? 'Plate number belongs to a deactivated car — reactivate that car instead of creating a new one'
+          : 'Plate number already registered',
+      );
+    }
 
     return this.prisma.car.create({
       data: {
@@ -130,6 +139,15 @@ export class CarsService {
 
   async update(carId: string, userId: string, dto: UpdateCarDto) {
     await this.assertCarManager(carId, userId);
+
+    if (dto.carType) {
+      const carTypeConfig = await this.prisma.carTypeConfig.findUnique({
+        where: { carType: dto.carType },
+      });
+      if (!carTypeConfig || !carTypeConfig.isActive) {
+        throw new BadRequestException(`Car type "${dto.carType}" is not available`);
+      }
+    }
 
     if (dto.plateNumber) {
       const conflict = await this.prisma.car.findFirst({
