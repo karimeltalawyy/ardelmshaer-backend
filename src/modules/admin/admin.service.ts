@@ -266,6 +266,10 @@ export class AdminService {
         email: true,
         phone: true,
         nationality: true,
+        // The admin edit dialog is opened straight from a list row, so anything it
+        // populates must be selected here. Omitting idNumber made a saved ID show as
+        // blank on edit even though it was stored correctly.
+        idNumber: true,
         profileImage: true,
         role: true,
         status: true,
