@@ -102,8 +102,17 @@ export class CarsController {
   @UseGuards(RolesGuard)
   @Roles('admin')
   @ApiOperation({ summary: '[Admin] Hard delete a car permanently' })
-  hardDeleteCar(@Param('id', ParseUUIDPipe) id: string) {
-    return this.carsService.hardDelete(id);
+  @ApiQuery({
+    name: 'force',
+    required: false,
+    description:
+      'Set to true to also remove the car trips. Their bookings are kept and simply detached.',
+  })
+  hardDeleteCar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('force') force?: string,
+  ) {
+    return this.carsService.hardDelete(id, force === 'true');
   }
 
   @Delete(':id')

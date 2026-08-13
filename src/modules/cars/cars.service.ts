@@ -186,22 +186,33 @@ export class CarsService {
 
   // ─── Hard delete ─────────────────────────────────────────────────────────────
 
-  async hardDelete(carId: string) {
+  async hardDelete(carId: string, force = false) {
     const car = await this.prisma.car.findUnique({ where: { id: carId } });
     if (!car) throw new NotFoundException('Car not found');
 
     // Trip.car declares no onDelete rule, so Postgres RESTRICTs the delete while any
     // trip still points at this car. Prisma raised P2003 and nothing caught it, which
-    // is why the admin saw a bare 500. Trips carry bookings and revenue history, so
-    // cascading is not an option — explain it and point at deactivation instead.
+    // is why the admin saw a bare 500.
     const tripCount = await this.prisma.trip.count({ where: { carId } });
-    if (tripCount > 0) {
+
+    if (tripCount > 0 && !force) {
       throw new ConflictException(
-        `لا يمكن حذف هذه المركبة نهائياً لأنها مرتبطة بـ ${tripCount} رحلة في السجل. عطّلها بدلاً من ذلك للحفاظ على سجل الرحلات والحجوزات.`,
+        `هذه المركبة مرتبطة بـ ${tripCount} رحلة. أكّد الحذف لإزالة هذه الرحلات — الحجوزات وبياناتها ستبقى محفوظة.`,
       );
     }
 
     try {
+      if (tripCount > 0) {
+        // bookings.trip_id is nullable and the FK is ON DELETE SET NULL, so removing
+        // the trips detaches their bookings instead of destroying them — the same
+        // trip-less state demand bookings already live in. Passengers, documents and
+        // payments hang off the booking, not the trip, so they survive untouched.
+        return await this.prisma.$transaction(async (tx) => {
+          await tx.trip.deleteMany({ where: { carId } });
+          return tx.car.delete({ where: { id: carId } });
+        });
+      }
+
       return await this.prisma.car.delete({ where: { id: carId } });
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
