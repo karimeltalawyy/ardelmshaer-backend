@@ -9,7 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCarDto } from './dto/create-car.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
 import { ensureAllCarTypeConfigs } from '../../common/utils/car-type-config.util';
-import { CarType } from '@prisma/client';
+import { CarType, Prisma } from '@prisma/client';
 import { CAR_CATALOG } from './car-catalog.data';
 
 @Injectable()
@@ -189,7 +189,28 @@ export class CarsService {
   async hardDelete(carId: string) {
     const car = await this.prisma.car.findUnique({ where: { id: carId } });
     if (!car) throw new NotFoundException('Car not found');
-    return this.prisma.car.delete({ where: { id: carId } });
+
+    // Trip.car declares no onDelete rule, so Postgres RESTRICTs the delete while any
+    // trip still points at this car. Prisma raised P2003 and nothing caught it, which
+    // is why the admin saw a bare 500. Trips carry bookings and revenue history, so
+    // cascading is not an option — explain it and point at deactivation instead.
+    const tripCount = await this.prisma.trip.count({ where: { carId } });
+    if (tripCount > 0) {
+      throw new ConflictException(
+        `لا يمكن حذف هذه المركبة نهائياً لأنها مرتبطة بـ ${tripCount} رحلة في السجل. عطّلها بدلاً من ذلك للحفاظ على سجل الرحلات والحجوزات.`,
+      );
+    }
+
+    try {
+      return await this.prisma.car.delete({ where: { id: carId } });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
+        throw new ConflictException(
+          'لا يمكن حذف هذه المركبة نهائياً لوجود سجلات مرتبطة بها. عطّلها بدلاً من ذلك.',
+        );
+      }
+      throw e;
+    }
   }
 
   // ─── Public: available car counts ────────────────────────────────────────────
